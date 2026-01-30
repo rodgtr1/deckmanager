@@ -6,11 +6,19 @@ pub struct InputProcessor {
     last_encoders: Vec<bool>,
 }
 
+/// Normalized input events from the Stream Deck.
+///
+/// Each variant represents a distinct input type:
+/// - `Button`: Physical button press/release (index + pressed state)
+/// - `Encoder`: Rotary encoder twist (index + delta)
+/// - `EncoderPress`: Encoder push button (index + pressed state)
+/// - `Swipe`: Touch screen swipe gesture (start + end coordinates)
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub enum LogicalEvent {
     Button(ButtonEvent),
     Encoder(EncoderEvent),
-    EncoderPress(ButtonEvent), // reuse ButtonEvent (pressed: bool)
+    EncoderPress(ButtonEvent),
     Swipe(TouchSwipeEvent),
 }
 

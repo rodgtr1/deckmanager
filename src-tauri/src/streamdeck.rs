@@ -1,6 +1,5 @@
 use crate::binding::{Binding, InputRef};
-use crate::capability::{Capability, CapabilityEffect};
-use crate::events::ButtonEvent;
+use crate::capability::Capability;
 use crate::input_processor::{InputProcessor, LogicalEvent};
 use anyhow::{Context, Result};
 use elgato_streamdeck::{list_devices, StreamDeck, StreamDeckInput};
@@ -60,7 +59,9 @@ pub fn run(app: AppHandle) -> Result<()> {
             }
 
             StreamDeckInput::EncoderStateChange(states) => {
+                #[cfg(debug_assertions)]
                 println!("RAW encoder state: {:?}", states);
+
                 for event in processor.process_encoder_presses(&states) {
                     emit_event(&app, event.clone());
                     handle_logical_event(event, &bindings);
@@ -88,24 +89,6 @@ fn handle_logical_event(event: LogicalEvent, bindings: &[Binding]) {
             }
 
             _ => {}
-        }
-    }
-}
-
-fn apply_effect(effect: CapabilityEffect) {
-    match effect {
-        CapabilityEffect::VolumeDelta(delta) => {
-            apply_volume_delta(delta);
-        }
-
-        CapabilityEffect::ToggleMute => {
-            let result = std::process::Command::new("wpctl")
-                .args(["set-mute", "@DEFAULT_AUDIO_SINK@", "toggle"])
-                .status();
-
-            if let Err(err) = result {
-                eprintln!("Failed to toggle mute: {err}");
-            }
         }
     }
 }
