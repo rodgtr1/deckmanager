@@ -2,6 +2,7 @@ use tauri::Builder;
 
 mod binding;
 mod capability;
+mod config;
 mod events;
 mod hid;
 mod input_processor;

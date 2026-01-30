@@ -1,5 +1,6 @@
-use crate::binding::{Binding, InputRef};
+use crate::binding::Binding;
 use crate::capability::Capability;
+use crate::config;
 use crate::input_processor::{InputProcessor, LogicalEvent};
 use anyhow::{Context, Result};
 use elgato_streamdeck::{list_devices, StreamDeck, StreamDeckInput};
@@ -21,18 +22,7 @@ pub fn run(app: AppHandle) -> Result<()> {
 
     let mut processor = InputProcessor::default();
 
-    let bindings = vec![
-        // Encoder 0 twist → volume
-        Binding {
-            input: InputRef::Encoder { index: 0 },
-            capability: Capability::SystemVolume { step: 0.02 },
-        },
-        // Encoder 0 press → mute
-        Binding {
-            input: InputRef::EncoderPress { index: 0 },
-            capability: Capability::ToggleMute,
-        },
-    ];
+    let bindings = config::load_bindings().context("Failed to load bindings")?;
 
     loop {
         let input = deck.read_input(Some(Duration::from_millis(50)))?;
@@ -84,6 +74,18 @@ fn handle_logical_event(event: LogicalEvent, bindings: &[Binding]) {
                 toggle_mute();
             }
 
+            (Capability::ToggleMute, LogicalEvent::Button(e)) if e.pressed => {
+                toggle_mute();
+            }
+
+            (Capability::MediaPlayPause, LogicalEvent::EncoderPress(e)) if e.pressed => {
+                media_play_pause();
+            }
+
+            (Capability::MediaPlayPause, LogicalEvent::Button(e)) if e.pressed => {
+                media_play_pause();
+            }
+
             (Capability::SystemVolume { step }, LogicalEvent::Encoder(e)) => {
                 apply_volume_delta(e.delta as f32 * step);
             }
@@ -129,6 +131,10 @@ fn toggle_mute() {
     let _ = Command::new("wpctl")
         .args(["set-mute", "@DEFAULT_AUDIO_SINK@", "toggle"])
         .status();
+}
+
+fn media_play_pause() {
+    let _ = Command::new("playerctl").arg("play-pause").status();
 }
 
 fn emit_event(app: &AppHandle, event: LogicalEvent) {

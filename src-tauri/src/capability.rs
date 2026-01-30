@@ -1,7 +1,11 @@
-#[derive(Debug, Clone, PartialEq)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type")]
 pub enum Capability {
     SystemVolume { step: f32 },
     ToggleMute,
+    MediaPlayPause,
 }
 
 /// Effects produced when a capability is triggered.
@@ -12,6 +16,7 @@ pub enum Capability {
 pub enum CapabilityEffect {
     VolumeDelta(f32),
     ToggleMute,
+    MediaPlayPause,
 }
 
 #[allow(dead_code)] // Reserved for future effect-based dispatch
@@ -31,10 +36,8 @@ impl Capability {
 
     pub fn apply_button(&self, pressed: bool) -> Option<CapabilityEffect> {
         match self {
-            Capability::ToggleMute if pressed => {
-                // only fire on press, not release
-                Some(CapabilityEffect::ToggleMute)
-            }
+            Capability::ToggleMute if pressed => Some(CapabilityEffect::ToggleMute),
+            Capability::MediaPlayPause if pressed => Some(CapabilityEffect::MediaPlayPause),
             _ => None,
         }
     }
@@ -143,5 +146,27 @@ mod tests {
         let cap = Capability::SystemVolume { step: 0.02 };
         let effect = cap.apply_button(true);
         assert_eq!(effect, None);
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // MediaPlayPause capability tests
+    // ─────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn media_play_pause_produces_effect_on_press() {
+        let cap = Capability::MediaPlayPause;
+        assert_eq!(cap.apply_button(true), Some(CapabilityEffect::MediaPlayPause));
+    }
+
+    #[test]
+    fn media_play_pause_no_effect_on_release() {
+        let cap = Capability::MediaPlayPause;
+        assert_eq!(cap.apply_button(false), None);
+    }
+
+    #[test]
+    fn media_play_pause_ignores_encoder_input() {
+        let cap = Capability::MediaPlayPause;
+        assert_eq!(cap.apply_encoder(1), None);
     }
 }

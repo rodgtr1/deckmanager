@@ -1,12 +1,13 @@
 use crate::capability::Capability;
 use crate::input_processor::LogicalEvent;
+use serde::{Deserialize, Serialize};
 
 /// Reference to a specific input on the Stream Deck.
 ///
 /// Used in bindings to specify which input triggers a capability.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
 #[non_exhaustive]
-#[allow(dead_code)] // Variants reserved for future config-driven bindings
 pub enum InputRef {
     Button { index: usize },
     Encoder { index: usize },
@@ -14,7 +15,7 @@ pub enum InputRef {
     Swipe,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Binding {
     pub input: InputRef,
     pub capability: Capability,
