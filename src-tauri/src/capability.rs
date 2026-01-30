@@ -6,6 +6,12 @@ pub enum Capability {
     SystemVolume { step: f32 },
     ToggleMute,
     MediaPlayPause,
+    MediaNext,
+    MediaPrevious,
+    MediaStop,
+    RunCommand { command: String },
+    LaunchApp { command: String },
+    OpenURL { url: String },
 }
 
 /// Effects produced when a capability is triggered.
@@ -17,6 +23,12 @@ pub enum CapabilityEffect {
     VolumeDelta(f32),
     ToggleMute,
     MediaPlayPause,
+    MediaNext,
+    MediaPrevious,
+    MediaStop,
+    RunCommand(String),
+    LaunchApp(String),
+    OpenURL(String),
 }
 
 #[allow(dead_code)] // Reserved for future effect-based dispatch
@@ -38,6 +50,16 @@ impl Capability {
         match self {
             Capability::ToggleMute if pressed => Some(CapabilityEffect::ToggleMute),
             Capability::MediaPlayPause if pressed => Some(CapabilityEffect::MediaPlayPause),
+            Capability::MediaNext if pressed => Some(CapabilityEffect::MediaNext),
+            Capability::MediaPrevious if pressed => Some(CapabilityEffect::MediaPrevious),
+            Capability::MediaStop if pressed => Some(CapabilityEffect::MediaStop),
+            Capability::RunCommand { command } if pressed => {
+                Some(CapabilityEffect::RunCommand(command.clone()))
+            }
+            Capability::LaunchApp { command } if pressed => {
+                Some(CapabilityEffect::LaunchApp(command.clone()))
+            }
+            Capability::OpenURL { url } if pressed => Some(CapabilityEffect::OpenURL(url.clone())),
             _ => None,
         }
     }
@@ -168,5 +190,125 @@ mod tests {
     fn media_play_pause_ignores_encoder_input() {
         let cap = Capability::MediaPlayPause;
         assert_eq!(cap.apply_encoder(1), None);
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // MediaNext capability tests
+    // ─────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn media_next_produces_effect_on_press() {
+        let cap = Capability::MediaNext;
+        assert_eq!(cap.apply_button(true), Some(CapabilityEffect::MediaNext));
+    }
+
+    #[test]
+    fn media_next_no_effect_on_release() {
+        let cap = Capability::MediaNext;
+        assert_eq!(cap.apply_button(false), None);
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // MediaPrevious capability tests
+    // ─────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn media_previous_produces_effect_on_press() {
+        let cap = Capability::MediaPrevious;
+        assert_eq!(
+            cap.apply_button(true),
+            Some(CapabilityEffect::MediaPrevious)
+        );
+    }
+
+    #[test]
+    fn media_previous_no_effect_on_release() {
+        let cap = Capability::MediaPrevious;
+        assert_eq!(cap.apply_button(false), None);
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // MediaStop capability tests
+    // ─────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn media_stop_produces_effect_on_press() {
+        let cap = Capability::MediaStop;
+        assert_eq!(cap.apply_button(true), Some(CapabilityEffect::MediaStop));
+    }
+
+    #[test]
+    fn media_stop_no_effect_on_release() {
+        let cap = Capability::MediaStop;
+        assert_eq!(cap.apply_button(false), None);
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // RunCommand capability tests
+    // ─────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn run_command_produces_effect_on_press() {
+        let cap = Capability::RunCommand {
+            command: "echo hello".to_string(),
+        };
+        assert_eq!(
+            cap.apply_button(true),
+            Some(CapabilityEffect::RunCommand("echo hello".to_string()))
+        );
+    }
+
+    #[test]
+    fn run_command_no_effect_on_release() {
+        let cap = Capability::RunCommand {
+            command: "echo hello".to_string(),
+        };
+        assert_eq!(cap.apply_button(false), None);
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // LaunchApp capability tests
+    // ─────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn launch_app_produces_effect_on_press() {
+        let cap = Capability::LaunchApp {
+            command: "firefox".to_string(),
+        };
+        assert_eq!(
+            cap.apply_button(true),
+            Some(CapabilityEffect::LaunchApp("firefox".to_string()))
+        );
+    }
+
+    #[test]
+    fn launch_app_no_effect_on_release() {
+        let cap = Capability::LaunchApp {
+            command: "firefox".to_string(),
+        };
+        assert_eq!(cap.apply_button(false), None);
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // OpenURL capability tests
+    // ─────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn open_url_produces_effect_on_press() {
+        let cap = Capability::OpenURL {
+            url: "https://github.com".to_string(),
+        };
+        assert_eq!(
+            cap.apply_button(true),
+            Some(CapabilityEffect::OpenURL("https://github.com".to_string()))
+        );
+    }
+
+    #[test]
+    fn open_url_no_effect_on_release() {
+        let cap = Capability::OpenURL {
+            url: "https://github.com".to_string(),
+        };
+        assert_eq!(cap.apply_button(false), None);
     }
 }

@@ -1,15 +1,20 @@
 use crate::binding::Binding;
 use crate::capability::Capability;
-use crate::config;
+use crate::device::DeviceInfo;
 use crate::input_processor::{InputProcessor, LogicalEvent};
 use anyhow::{Context, Result};
 use elgato_streamdeck::{list_devices, StreamDeck, StreamDeckInput};
 use hidapi::HidApi;
 use std::process::Command;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 
-pub fn run(app: AppHandle) -> Result<()> {
+pub fn run(
+    app: AppHandle,
+    device_info_state: Arc<Mutex<Option<DeviceInfo>>>,
+    bindings_state: Arc<Mutex<Vec<Binding>>>,
+) -> Result<()> {
     let hid = HidApi::new().context("hid init failed")?;
     let devices = list_devices(&hid);
 
@@ -20,12 +25,21 @@ pub fn run(app: AppHandle) -> Result<()> {
     let (kind, serial) = &devices[0];
     let deck = StreamDeck::connect(&hid, *kind, serial)?;
 
-    let mut processor = InputProcessor::default();
+    // Capture device info into shared state
+    {
+        let info = DeviceInfo::from_kind(*kind);
+        if let Ok(mut state) = device_info_state.lock() {
+            *state = Some(info);
+        }
+    }
 
-    let bindings = config::load_bindings().context("Failed to load bindings")?;
+    let mut processor = InputProcessor::default();
 
     loop {
         let input = deck.read_input(Some(Duration::from_millis(50)))?;
+
+        // Get current bindings snapshot for this iteration
+        let bindings = bindings_state.lock().ok().map(|b| b.clone()).unwrap_or_default();
 
         match input {
             StreamDeckInput::ButtonStateChange(states) => {
@@ -86,6 +100,54 @@ fn handle_logical_event(event: LogicalEvent, bindings: &[Binding]) {
                 media_play_pause();
             }
 
+            (Capability::MediaNext, LogicalEvent::EncoderPress(e)) if e.pressed => {
+                media_next();
+            }
+
+            (Capability::MediaNext, LogicalEvent::Button(e)) if e.pressed => {
+                media_next();
+            }
+
+            (Capability::MediaPrevious, LogicalEvent::EncoderPress(e)) if e.pressed => {
+                media_previous();
+            }
+
+            (Capability::MediaPrevious, LogicalEvent::Button(e)) if e.pressed => {
+                media_previous();
+            }
+
+            (Capability::MediaStop, LogicalEvent::EncoderPress(e)) if e.pressed => {
+                media_stop();
+            }
+
+            (Capability::MediaStop, LogicalEvent::Button(e)) if e.pressed => {
+                media_stop();
+            }
+
+            (Capability::RunCommand { command }, LogicalEvent::EncoderPress(e)) if e.pressed => {
+                run_shell_command(command);
+            }
+
+            (Capability::RunCommand { command }, LogicalEvent::Button(e)) if e.pressed => {
+                run_shell_command(command);
+            }
+
+            (Capability::LaunchApp { command }, LogicalEvent::EncoderPress(e)) if e.pressed => {
+                launch_app(command);
+            }
+
+            (Capability::LaunchApp { command }, LogicalEvent::Button(e)) if e.pressed => {
+                launch_app(command);
+            }
+
+            (Capability::OpenURL { url }, LogicalEvent::EncoderPress(e)) if e.pressed => {
+                open_url(url);
+            }
+
+            (Capability::OpenURL { url }, LogicalEvent::Button(e)) if e.pressed => {
+                open_url(url);
+            }
+
             (Capability::SystemVolume { step }, LogicalEvent::Encoder(e)) => {
                 apply_volume_delta(e.delta as f32 * step);
             }
@@ -135,6 +197,30 @@ fn toggle_mute() {
 
 fn media_play_pause() {
     let _ = Command::new("playerctl").arg("play-pause").status();
+}
+
+fn media_next() {
+    let _ = Command::new("playerctl").arg("next").status();
+}
+
+fn media_previous() {
+    let _ = Command::new("playerctl").arg("previous").status();
+}
+
+fn media_stop() {
+    let _ = Command::new("playerctl").arg("stop").status();
+}
+
+fn run_shell_command(cmd: &str) {
+    let _ = Command::new("sh").args(["-c", cmd]).spawn();
+}
+
+fn launch_app(app: &str) {
+    let _ = Command::new(app).spawn();
+}
+
+fn open_url(url: &str) {
+    let _ = Command::new("xdg-open").arg(url).spawn();
 }
 
 fn emit_event(app: &AppHandle, event: LogicalEvent) {

@@ -12,8 +12,33 @@ struct Config {
 }
 
 /// Returns the path to the config file: ~/.config/archdeck/bindings.toml
-fn config_path() -> Option<PathBuf> {
+pub fn config_path() -> Option<PathBuf> {
     dirs::config_dir().map(|p| p.join("archdeck").join("bindings.toml"))
+}
+
+/// Save bindings to the config file.
+pub fn save_bindings(bindings: &[Binding]) -> Result<()> {
+    let Some(path) = config_path() else {
+        anyhow::bail!("Could not determine config directory");
+    };
+
+    // Ensure parent directory exists
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("Failed to create config directory: {}", parent.display()))?;
+    }
+
+    let config = Config {
+        bindings: bindings.to_vec(),
+    };
+
+    let contents = toml::to_string_pretty(&config)
+        .context("Failed to serialize bindings to TOML")?;
+
+    fs::write(&path, contents)
+        .with_context(|| format!("Failed to write config file: {}", path.display()))?;
+
+    Ok(())
 }
 
 /// Load bindings from the config file, or return defaults if it doesn't exist.

@@ -1,79 +1,217 @@
-import { useEffect, useState } from "react";
-import { listen, emit } from "@tauri-apps/api/event";
-
-type ButtonEvent = {
-  index: number;
-  pressed: boolean;
-};
-
-type EncoderEvent = {
-  index: number;
-  delta: number;
-};
-
-type TouchSwipeEvent = {
-  start: [number, number];
-  end: [number, number];
-};
+import { useEffect, useState, useCallback } from "react";
+import { listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
+import DeviceLayout from "./components/DeviceLayout";
+import BindingEditor from "./components/BindingEditor";
+import {
+  DeviceInfo,
+  InputRef,
+  Capability,
+  Binding,
+  CapabilityInfo,
+  ButtonEvent,
+  EncoderEvent,
+  TouchSwipeEvent,
+} from "./types";
+import "./App.css";
 
 export default function App() {
-  const [events, setEvents] = useState<string[]>([]);
+  const [device, setDevice] = useState<DeviceInfo | null>(null);
+  const [bindings, setBindings] = useState<Binding[]>([]);
+  const [capabilities, setCapabilities] = useState<CapabilityInfo[]>([]);
+  const [selectedInput, setSelectedInput] = useState<InputRef | null>(null);
+  const [activeInputs, setActiveInputs] = useState<Set<string>>(new Set());
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
+  // Load initial data
   useEffect(() => {
-    console.log("Frontend mounting, registering listeners");
+    const loadData = async () => {
+      try {
+        const [deviceInfo, bindingsList, capsList] = await Promise.all([
+          invoke<DeviceInfo | null>("get_device_info"),
+          invoke<Binding[]>("get_bindings"),
+          invoke<CapabilityInfo[]>("get_capabilities"),
+        ]);
 
+        setDevice(deviceInfo);
+        setBindings(bindingsList);
+        setCapabilities(capsList);
+      } catch (e) {
+        setError(`Failed to load: ${e}`);
+      }
+    };
+
+    loadData();
+  }, []);
+
+  // Listen for Stream Deck events
+  useEffect(() => {
     const unlistenButton = listen<ButtonEvent>("streamdeck:button", (e) => {
-      setEvents((prev) => [
-        `Button ${e.payload.index} ${e.payload.pressed ? "DOWN" : "UP"}`,
-        ...prev,
-      ]);
+      const key = `Button:${e.payload.index}`;
+      setActiveInputs((prev) => {
+        const next = new Set(prev);
+        if (e.payload.pressed) {
+          next.add(key);
+        } else {
+          next.delete(key);
+        }
+        return next;
+      });
     });
 
     const unlistenEncoder = listen<EncoderEvent>("streamdeck:encoder", (e) => {
-      setEvents((prev) => [
-        `Encoder ${e.payload.index} delta ${e.payload.delta}`,
-        ...prev,
-      ]);
-    });
-
-    const unlistenSwipe = listen<TouchSwipeEvent>("streamdeck:swipe", (e) => {
-      const [sx, sy] = e.payload.start;
-      const [ex, ey] = e.payload.end;
-      setEvents((prev) => [`Swipe (${sx}, ${sy}) → (${ex}, ${ey})`, ...prev]);
+      // Flash the encoder briefly on rotation
+      const key = `Encoder:${e.payload.index}`;
+      setActiveInputs((prev) => new Set(prev).add(key));
+      setTimeout(() => {
+        setActiveInputs((prev) => {
+          const next = new Set(prev);
+          next.delete(key);
+          return next;
+        });
+      }, 150);
     });
 
     const unlistenEncoderPress = listen<ButtonEvent>(
       "streamdeck:encoder-press",
       (e) => {
-        setEvents((prev) => [
-          `Encoder ${e.payload.index} ${
-            e.payload.pressed ? "PRESS" : "RELEASE"
-          }`,
-          ...prev,
-        ]);
-      },
+        const key = `EncoderPress:${e.payload.index}`;
+        setActiveInputs((prev) => {
+          const next = new Set(prev);
+          if (e.payload.pressed) {
+            next.add(key);
+          } else {
+            next.delete(key);
+          }
+          return next;
+        });
+      }
     );
 
-    // ✅ NOW signal readiness
-    emit("frontend-ready");
-    console.log("Frontend ready signal sent");
+    const unlistenSwipe = listen<TouchSwipeEvent>("streamdeck:swipe", () => {
+      // Flash the touch strip briefly on swipe
+      const key = "swipe";
+      setActiveInputs((prev) => new Set(prev).add(key));
+      setTimeout(() => {
+        setActiveInputs((prev) => {
+          const next = new Set(prev);
+          next.delete(key);
+          return next;
+        });
+      }, 200);
+    });
 
     return () => {
       unlistenButton.then((f) => f());
       unlistenEncoder.then((f) => f());
-      unlistenSwipe.then((f) => f());
       unlistenEncoderPress.then((f) => f());
+      unlistenSwipe.then((f) => f());
     };
   }, []);
 
+  // Handle setting a binding
+  const handleSetBinding = useCallback(
+    async (input: InputRef, capability: Capability) => {
+      try {
+        await invoke("set_binding", { input, capability });
+        // Refresh bindings
+        const updated = await invoke<Binding[]>("get_bindings");
+        setBindings(updated);
+        setHasUnsavedChanges(true);
+        setError(null);
+      } catch (e) {
+        setError(`Failed to set binding: ${e}`);
+      }
+    },
+    []
+  );
+
+  // Handle removing a binding
+  const handleRemoveBinding = useCallback(async (input: InputRef) => {
+    try {
+      await invoke("remove_binding", { input });
+      // Refresh bindings
+      const updated = await invoke<Binding[]>("get_bindings");
+      setBindings(updated);
+      setHasUnsavedChanges(true);
+      setError(null);
+    } catch (e) {
+      setError(`Failed to remove binding: ${e}`);
+    }
+  }, []);
+
+  // Handle saving bindings to disk
+  const handleSave = useCallback(async () => {
+    setSaving(true);
+    try {
+      await invoke("save_bindings");
+      setHasUnsavedChanges(false);
+      setError(null);
+    } catch (e) {
+      setError(`Failed to save: ${e}`);
+    } finally {
+      setSaving(false);
+    }
+  }, []);
+
+  if (error && !device) {
+    return (
+      <div className="app error-state">
+        <h1>ArchDeck</h1>
+        <p className="error-message">{error}</p>
+        <p>Make sure your Stream Deck is connected.</p>
+      </div>
+    );
+  }
+
+  if (!device) {
+    return (
+      <div className="app loading-state">
+        <h1>ArchDeck</h1>
+        <p>Connecting to Stream Deck...</p>
+      </div>
+    );
+  }
+
   return (
-    <div style={{ padding: 20, fontFamily: "monospace" }}>
-      <h1>ArchDeck</h1>
-      <ul>
-        {events.slice(0, 20).map((e, i) => (
-          <li key={i}>{e}</li>
-        ))}
-      </ul>
+    <div className="app">
+      <header className="app-header">
+        <h1>ArchDeck</h1>
+        <div className="header-actions">
+          {hasUnsavedChanges && (
+            <span className="unsaved-indicator">Unsaved changes</span>
+          )}
+          <button
+            className="btn-save-config"
+            onClick={handleSave}
+            disabled={!hasUnsavedChanges || saving}
+          >
+            {saving ? "Saving..." : "Save Configuration"}
+          </button>
+        </div>
+      </header>
+
+      {error && <div className="error-banner">{error}</div>}
+
+      <main className="app-main">
+        <DeviceLayout
+          device={device}
+          bindings={bindings}
+          selectedInput={selectedInput}
+          activeInputs={activeInputs}
+          onSelectInput={setSelectedInput}
+        />
+
+        <BindingEditor
+          selectedInput={selectedInput}
+          bindings={bindings}
+          capabilities={capabilities}
+          onSetBinding={handleSetBinding}
+          onRemoveBinding={handleRemoveBinding}
+        />
+      </main>
     </div>
   );
 }

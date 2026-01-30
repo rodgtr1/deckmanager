@@ -1,0 +1,30 @@
+# Example ArchDeck bindings configuration
+# Place this file at ~/.config/archdeck/bindings.toml
+
+# Encoder 0 twist controls system volume (2% per tick)
+[[bindings]]
+[bindings.input]
+type = "Encoder"
+index = 0
+
+[bindings.capability]
+type = "SystemVolume"
+step = 0.02
+
+# Encoder 0 press toggles mute
+[[bindings]]
+[bindings.input]
+type = "EncoderPress"
+index = 0
+
+[bindings.capability]
+type = "ToggleMute"
+
+# Encoder 1 press toggles play/pause
+[[bindings]]
+[bindings.input]
+type = "EncoderPress"
+index = 1
+
+[bindings.capability]
+type = "MediaPlayPause"
