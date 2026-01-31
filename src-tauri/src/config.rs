@@ -69,6 +69,7 @@ pub fn default_bindings() -> Vec<Binding> {
             icon: None,
             label: None,
             button_image: None,
+            button_image_alt: None,
             show_label: None,
         },
         Binding {
@@ -77,6 +78,7 @@ pub fn default_bindings() -> Vec<Binding> {
             icon: None,
             label: None,
             button_image: None,
+            button_image_alt: None,
             show_label: None,
         },
         Binding {
@@ -85,6 +87,7 @@ pub fn default_bindings() -> Vec<Binding> {
             icon: None,
             label: None,
             button_image: None,
+            button_image_alt: None,
             show_label: None,
         },
         Binding {
@@ -93,6 +96,7 @@ pub fn default_bindings() -> Vec<Binding> {
             icon: None,
             label: None,
             button_image: None,
+            button_image_alt: None,
             show_label: None,
         },
     ]

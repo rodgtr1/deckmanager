@@ -16,6 +16,9 @@ export type InputRef =
   | { type: "EncoderPress"; index: number }
   | { type: "Swipe" };
 
+// Key Light action types
+export type KeyLightAction = "Toggle" | "On" | "Off" | "SetBrightness";
+
 // Capability types matching Rust's Capability enum
 export type Capability =
   | { type: "SystemVolume"; step: number }
@@ -26,15 +29,23 @@ export type Capability =
   | { type: "MediaStop" }
   | { type: "RunCommand"; command: string }
   | { type: "LaunchApp"; command: string }
-  | { type: "OpenURL"; url: string };
+  | { type: "OpenURL"; url: string }
+  | { type: "ElgatoKeyLight"; ip: string; port: number; action: KeyLightAction };
 
 export interface Binding {
   input: InputRef;
   capability: Capability;
-  icon?: string;         // Custom emoji or icon name (UI only)
-  label?: string;        // Custom display text (UI only)
-  button_image?: string; // File path or URL for hardware button
-  show_label?: boolean;  // Render label on hardware button
+  icon?: string;             // Custom emoji or icon name (UI only)
+  label?: string;            // Custom display text (UI only)
+  button_image?: string;     // File path or URL for hardware button (default state)
+  button_image_alt?: string; // Alternate image (shown when state is "active", e.g., muted)
+  show_label?: boolean;      // Render label on hardware button
+}
+
+// System state for stateful capabilities
+export interface SystemState {
+  is_muted: boolean;
+  is_playing: boolean;
 }
 
 // Capability metadata for UI
@@ -126,5 +137,7 @@ export function getCapabilityDisplayName(cap: Capability): string {
       return "App";
     case "OpenURL":
       return "URL";
+    case "ElgatoKeyLight":
+      return "Key Light";
   }
 }

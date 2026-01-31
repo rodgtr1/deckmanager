@@ -4,6 +4,7 @@ import {
   DeviceInfo,
   InputRef,
   Binding,
+  SystemState,
   inputsMatch,
   getCapabilityDisplayName,
   buttonRef,
@@ -27,8 +28,27 @@ interface DeviceLayoutProps {
   bindings: Binding[];
   selectedInput: InputRef | null;
   activeInputs: Set<string>;
+  systemState: SystemState;
   onSelectInput: (input: InputRef) => void;
   onDrop?: (input: InputRef, capabilityId: string) => void;
+}
+
+// Get effective image based on system state
+function getEffectiveImage(binding: Binding, state: SystemState): string | undefined {
+  const capType = binding.capability.type;
+
+  // Check if this capability has an "active" state
+  const isActive =
+    (capType === "ToggleMute" && state.is_muted) ||
+    (capType === "MediaPlayPause" && state.is_playing);
+
+  // If active and we have an alt image, use it
+  if (isActive && binding.button_image_alt) {
+    return binding.button_image_alt;
+  }
+
+  // Otherwise use the default image
+  return binding.button_image;
 }
 
 // Serialize InputRef for Set membership
@@ -42,6 +62,7 @@ export default function DeviceLayout({
   bindings,
   selectedInput,
   activeInputs,
+  systemState,
   onSelectInput,
   onDrop,
 }: DeviceLayoutProps) {
@@ -108,7 +129,9 @@ export default function DeviceLayout({
       const selected = isSelected(input);
       const active = isActive(input);
       const dragOver = isDragOver(input);
-      const hasButtonImage = binding?.button_image;
+      // Get effective image based on state (uses alt image when active)
+      const effectiveImage = binding ? getEffectiveImage(binding, systemState) : undefined;
+      const hasButtonImage = !!effectiveImage;
 
       buttons.push(
         <button
@@ -123,11 +146,11 @@ export default function DeviceLayout({
           {hasButtonImage ? (
             <>
               <img
-                src={getImageUrl(binding.button_image!)}
+                src={getImageUrl(effectiveImage)}
                 alt=""
                 className="button-image"
                 onError={(e) => {
-                  console.error("Failed to load button image:", binding.button_image);
+                  console.error("Failed to load button image:", effectiveImage);
                   (e.target as HTMLImageElement).style.display = 'none';
                 }}
               />
@@ -164,8 +187,10 @@ export default function DeviceLayout({
       const rotateDragOver = isDragOver(rotateInput);
       const pressDragOver = isDragOver(pressInput);
 
-      // Determine which image to show (priority: pressBinding > rotateBinding)
-      const encoderImage = pressBinding?.button_image || rotateBinding?.button_image;
+      // Determine which image to show (priority: pressBinding > rotateBinding, considering state)
+      const pressImage = pressBinding ? getEffectiveImage(pressBinding, systemState) : undefined;
+      const rotateImage = rotateBinding ? getEffectiveImage(rotateBinding, systemState) : undefined;
+      const encoderImage = pressImage || rotateImage;
       const hasEncoderImage = !!encoderImage;
 
       encoders.push(

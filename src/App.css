@@ -729,3 +729,189 @@
 .checkbox-label input[type="checkbox"]:hover {
     border-color: var(--text-secondary);
 }
+
+/* Icon Browser Modal */
+.icon-browser-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    backdrop-filter: blur(4px);
+}
+
+.icon-browser-modal {
+    width: 600px;
+    max-width: 90vw;
+    max-height: 80vh;
+    background: var(--bg-secondary);
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+}
+
+.icon-browser-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.icon-browser-header h3 {
+    font-size: 1.125rem;
+    font-weight: 500;
+}
+
+.icon-browser-close {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 1.5rem;
+    border-radius: 4px;
+    transition: all 0.15s;
+}
+
+.icon-browser-close:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text-primary);
+}
+
+.icon-browser-search {
+    padding: 0.75rem 1.25rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.icon-browser-search input {
+    width: 100%;
+    padding: 0.625rem 0.75rem;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-primary);
+    font-size: 0.875rem;
+}
+
+.icon-browser-search input:focus {
+    outline: none;
+    border-color: #3b82f6;
+}
+
+.icon-browser-tabs {
+    display: flex;
+    padding: 0 1.25rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.icon-browser-tab {
+    padding: 0.75rem 1rem;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 0.875rem;
+    font-weight: 500;
+    transition: all 0.15s;
+}
+
+.icon-browser-tab:hover {
+    color: var(--text-primary);
+}
+
+.icon-browser-tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+}
+
+.icon-browser-grid {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1rem 1.25rem;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+    gap: 0.5rem;
+    align-content: start;
+}
+
+.icon-browser-empty {
+    grid-column: 1 / -1;
+    text-align: center;
+    color: var(--text-secondary);
+    padding: 2rem;
+}
+
+.icon-browser-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.5rem;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.15s;
+    opacity: 0;
+}
+
+.icon-browser-item.loaded {
+    opacity: 1;
+}
+
+.icon-browser-item:hover {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: var(--border);
+}
+
+.icon-browser-item img {
+    width: 48px;
+    height: 48px;
+    object-fit: contain;
+}
+
+.icon-browser-item .icon-name {
+    font-size: 0.625rem;
+    color: var(--text-secondary);
+    text-align: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
+}
+
+.icon-browser-footer {
+    padding: 0.75rem 1.25rem;
+    border-top: 1px solid var(--border);
+    display: flex;
+    justify-content: flex-end;
+}
+
+.btn-browse-file {
+    padding: 0.5rem 1rem;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 0.875rem;
+    transition: all 0.15s;
+}
+
+.btn-browse-file:hover {
+    border-color: var(--text-secondary);
+    color: var(--text-primary);
+}

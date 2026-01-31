@@ -20,6 +20,13 @@ const MODULES: Record<string, { icon: string; capabilities: string[] }> = {
       "MediaStop",
     ],
   },
+  Lighting: {
+    icon: "\u{1F4A1}",
+    capabilities: [
+      "ElgatoKeyLightToggle",
+      "ElgatoKeyLightBrightness",
+    ],
+  },
   Commands: {
     icon: "\u26A1",
     capabilities: ["RunCommand", "LaunchApp", "OpenURL"],
@@ -37,6 +44,8 @@ const CAPABILITY_ICONS: Record<string, string> = {
   RunCommand: "\u2699\uFE0F",
   LaunchApp: "\u{1F4C1}",
   OpenURL: "\u{1F310}",
+  ElgatoKeyLightToggle: "\u{1F4A1}",
+  ElgatoKeyLightBrightness: "\u2600\uFE0F",
 };
 
 export function getCapabilityIcon(capabilityId: string): string {

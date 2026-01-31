@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { open } from "@tauri-apps/plugin-dialog";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import {
   InputRef,
@@ -10,6 +9,7 @@ import {
   getInputDisplayName,
 } from "../types";
 import { getCapabilityIcon } from "./CapabilityBrowser";
+import IconBrowser from "./IconBrowser";
 
 // Icon picker options
 const ICONS = [
@@ -29,6 +29,7 @@ interface BindingEditorProps {
     icon?: string,
     label?: string,
     buttonImage?: string,
+    buttonImageAlt?: string,
     showLabel?: boolean
   ) => void;
   onRemoveBinding: (input: InputRef) => void;
@@ -48,7 +49,11 @@ export default function BindingEditor({
   const [customIcon, setCustomIcon] = useState<string>("");
   const [customLabel, setCustomLabel] = useState<string>("");
   const [buttonImage, setButtonImage] = useState<string>("");
+  const [buttonImageAlt, setButtonImageAlt] = useState<string>("");
   const [showLabel, setShowLabel] = useState<boolean>(false);
+  const [showIconBrowser, setShowIconBrowser] = useState<boolean>(false);
+  const [iconBrowserTarget, setIconBrowserTarget] = useState<"default" | "alt">("default");
+  const [keyLightIp, setKeyLightIp] = useState<string>("192.168.1.100");
 
   // Get current binding for selected input
   const currentBinding = selectedInput
@@ -87,6 +92,7 @@ export default function BindingEditor({
       setCustomIcon(currentBinding.icon || "");
       setCustomLabel(currentBinding.label || "");
       setButtonImage(currentBinding.button_image || "");
+      setButtonImageAlt(currentBinding.button_image_alt || "");
       setShowLabel(currentBinding.show_label || false);
       if (currentBinding.capability.type === "SystemVolume") {
         setStep(currentBinding.capability.step);
@@ -100,6 +106,17 @@ export default function BindingEditor({
       if (currentBinding.capability.type === "OpenURL") {
         setUrl(currentBinding.capability.url);
       }
+      if (currentBinding.capability.type === "ElgatoKeyLight") {
+        setKeyLightIp(currentBinding.capability.ip);
+        // Map the capability to the right UI ID
+        const actionMap: Record<string, string> = {
+          Toggle: "ElgatoKeyLightToggle",
+          On: "ElgatoKeyLightToggle",
+          Off: "ElgatoKeyLightToggle",
+          SetBrightness: "ElgatoKeyLightBrightness",
+        };
+        setSelectedCapabilityId(actionMap[currentBinding.capability.action] || "ElgatoKeyLightToggle");
+      }
     } else {
       setSelectedCapabilityId("");
       setStep(0.02);
@@ -108,21 +125,22 @@ export default function BindingEditor({
       setCustomIcon("");
       setCustomLabel("");
       setButtonImage("");
+      setButtonImageAlt("");
       setShowLabel(false);
+      setKeyLightIp("192.168.1.100");
     }
   }, [currentBinding, selectedInput]);
 
-  const handleFilePicker = async () => {
-    try {
-      const file = await open({
-        multiple: false,
-        filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "gif", "webp"] }],
-      });
-      if (file) {
-        setButtonImage(file);
-      }
-    } catch (e) {
-      console.error("Failed to open file picker:", e);
+  const handleOpenIconBrowser = (target: "default" | "alt") => {
+    setIconBrowserTarget(target);
+    setShowIconBrowser(true);
+  };
+
+  const handleIconSelect = (iconUrl: string) => {
+    if (iconBrowserTarget === "default") {
+      setButtonImage(iconUrl);
+    } else {
+      setButtonImageAlt(iconUrl);
     }
   };
 
@@ -161,6 +179,14 @@ export default function BindingEditor({
         if (!url.trim() || url === "https://") return;
         capability = { type: "OpenURL", url: url.trim() };
         break;
+      case "ElgatoKeyLightToggle":
+        if (!keyLightIp.trim()) return;
+        capability = { type: "ElgatoKeyLight", ip: keyLightIp.trim(), port: 9123, action: "Toggle" };
+        break;
+      case "ElgatoKeyLightBrightness":
+        if (!keyLightIp.trim()) return;
+        capability = { type: "ElgatoKeyLight", ip: keyLightIp.trim(), port: 9123, action: "SetBrightness" };
+        break;
       default:
         return;
     }
@@ -170,10 +196,11 @@ export default function BindingEditor({
     const label = customLabel || undefined;
     // For button image and show label, pass the actual values (not using || which breaks false)
     const image = buttonImage.trim() || undefined;
+    const imageAlt = buttonImageAlt.trim() || undefined;
     const showLabelOnButton = showLabel;
 
-    console.log("handleSave:", { icon, label, image, showLabelOnButton, customLabel });
-    onSetBinding(selectedInput, capability, icon, label, image, showLabelOnButton);
+    console.log("handleSave:", { icon, label, image, imageAlt, showLabelOnButton, customLabel });
+    onSetBinding(selectedInput, capability, icon, label, image, imageAlt, showLabelOnButton);
   };
 
   const handleRemove = () => {
@@ -183,6 +210,7 @@ export default function BindingEditor({
     setCustomIcon("");
     setCustomLabel("");
     setButtonImage("");
+    setButtonImageAlt("");
     setShowLabel(false);
   };
 
@@ -199,6 +227,54 @@ export default function BindingEditor({
     }
     // Convert local file path to Tauri asset URL
     return convertFileSrc(buttonImage);
+  };
+
+  // Get preview URL for alternate button image
+  const getAltPreviewUrl = (): string | null => {
+    if (!buttonImageAlt) return null;
+    if (buttonImageAlt.startsWith("http://") || buttonImageAlt.startsWith("https://")) {
+      return buttonImageAlt;
+    }
+    return convertFileSrc(buttonImageAlt);
+  };
+
+  // Check if the selected capability supports state-based images
+  const supportsStateImages =
+    selectedCapabilityId === "ToggleMute" ||
+    selectedCapabilityId === "MediaPlayPause" ||
+    selectedCapabilityId === "ElgatoKeyLightToggle";
+
+  // Check if this is a Key Light capability
+  const isKeyLightCapability =
+    selectedCapabilityId === "ElgatoKeyLightToggle" ||
+    selectedCapabilityId === "ElgatoKeyLightBrightness";
+
+  // Get description for alternate image based on capability
+  const getAltImageDescription = (): string => {
+    if (selectedCapabilityId === "ToggleMute") {
+      return "Image shown when audio is muted";
+    }
+    if (selectedCapabilityId === "MediaPlayPause") {
+      return "Image shown when media is playing";
+    }
+    if (selectedCapabilityId === "ElgatoKeyLightToggle") {
+      return "Image shown when light is on";
+    }
+    return "Alternate state image";
+  };
+
+  // Get label for alternate image based on capability
+  const getAltImageLabel = (): string => {
+    if (selectedCapabilityId === "ToggleMute") {
+      return "Muted Image";
+    }
+    if (selectedCapabilityId === "MediaPlayPause") {
+      return "Playing Image";
+    }
+    if (selectedCapabilityId === "ElgatoKeyLightToggle") {
+      return "Light On Image";
+    }
+    return "Alternate Image";
   };
 
   if (!selectedInput) {
@@ -300,6 +376,22 @@ export default function BindingEditor({
         </div>
       )}
 
+      {isKeyLightCapability && (
+        <div className="editor-field">
+          <label htmlFor="keylight-ip-input">Key Light IP Address</label>
+          <input
+            id="keylight-ip-input"
+            type="text"
+            value={keyLightIp}
+            onChange={(e) => setKeyLightIp(e.target.value)}
+            placeholder="192.168.1.100"
+          />
+          <p className="field-description">
+            IP address of your Elgato Key Light (default port 9123)
+          </p>
+        </div>
+      )}
+
       {selectedCapabilityId && (
         <>
           <div className="editor-field">
@@ -356,7 +448,7 @@ export default function BindingEditor({
                   <button
                     type="button"
                     className="btn-browse"
-                    onClick={handleFilePicker}
+                    onClick={() => handleOpenIconBrowser("default")}
                   >
                     Browse
                   </button>
@@ -387,6 +479,39 @@ export default function BindingEditor({
                   Renders the label text on the hardware display
                 </p>
               </div>
+
+              {/* Alternate image for stateful capabilities */}
+              {supportsStateImages && (
+                <div className="editor-field">
+                  <label htmlFor="button-image-alt-input">
+                    {getAltImageLabel()}
+                  </label>
+                  <div className="image-source">
+                    <input
+                      id="button-image-alt-input"
+                      type="text"
+                      value={buttonImageAlt}
+                      onChange={(e) => setButtonImageAlt(e.target.value)}
+                      placeholder="File path or URL"
+                    />
+                    <button
+                      type="button"
+                      className="btn-browse"
+                      onClick={() => handleOpenIconBrowser("alt")}
+                    >
+                      Browse
+                    </button>
+                  </div>
+                  {getAltPreviewUrl() && (
+                    <div className="image-preview-container">
+                      <img src={getAltPreviewUrl()!} alt="Alternate preview" className="image-preview" />
+                    </div>
+                  )}
+                  <p className="field-description">
+                    {getAltImageDescription()}
+                  </p>
+                </div>
+              )}
             </>
           )}
         </>
@@ -408,6 +533,12 @@ export default function BindingEditor({
           Remove
         </button>
       </div>
+
+      <IconBrowser
+        isOpen={showIconBrowser}
+        onClose={() => setShowIconBrowser(false)}
+        onSelect={handleIconSelect}
+      />
     </div>
   );
 }

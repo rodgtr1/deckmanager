@@ -2,6 +2,7 @@ use crate::binding::{Binding, InputRef};
 use crate::capability::Capability;
 use crate::config;
 use crate::device::DeviceInfo;
+use crate::state_manager::{self, SystemState};
 use crate::streamdeck;
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
@@ -11,6 +12,7 @@ use tauri::State;
 pub struct AppState {
     pub device_info: Arc<Mutex<Option<DeviceInfo>>>,
     pub bindings: Arc<Mutex<Vec<Binding>>>,
+    pub system_state: Arc<Mutex<SystemState>>,
 }
 
 /// Information about an available capability for the frontend.
@@ -152,6 +154,34 @@ pub fn get_capabilities() -> Vec<CapabilityInfo> {
                 description: "URL to open".to_string(),
             }],
         },
+        CapabilityInfo {
+            id: "ElgatoKeyLightToggle".to_string(),
+            name: "Key Light Toggle".to_string(),
+            description: "Toggle Elgato Key Light on/off".to_string(),
+            supports_button: true,
+            supports_encoder: false,
+            supports_encoder_press: true,
+            parameters: vec![CapabilityParameter {
+                name: "ip".to_string(),
+                param_type: "string".to_string(),
+                default_value: "192.168.1.100".to_string(),
+                description: "IP address of the Key Light".to_string(),
+            }],
+        },
+        CapabilityInfo {
+            id: "ElgatoKeyLightBrightness".to_string(),
+            name: "Key Light Brightness".to_string(),
+            description: "Adjust Elgato Key Light brightness with encoder".to_string(),
+            supports_button: false,
+            supports_encoder: true,
+            supports_encoder_press: false,
+            parameters: vec![CapabilityParameter {
+                name: "ip".to_string(),
+                param_type: "string".to_string(),
+                default_value: "192.168.1.100".to_string(),
+                description: "IP address of the Key Light".to_string(),
+            }],
+        },
     ]
 }
 
@@ -167,6 +197,8 @@ pub struct SetBindingParams {
     pub label: Option<String>,
     #[serde(default)]
     pub button_image: Option<String>,
+    #[serde(default)]
+    pub button_image_alt: Option<String>,
     #[serde(default)]
     pub show_label: Option<bool>,
 }
@@ -192,6 +224,7 @@ pub fn set_binding(state: State<AppState>, params: SetBindingParams) -> Result<(
         icon: params.icon,
         label: params.label,
         button_image: params.button_image,
+        button_image_alt: params.button_image_alt,
         show_label: params.show_label,
     });
 
@@ -224,6 +257,25 @@ pub fn sync_button_images() {
 pub fn save_bindings(state: State<AppState>) -> Result<(), String> {
     let bindings = state.bindings.lock().map_err(|e| e.to_string())?;
     config::save_bindings(&bindings).map_err(|e| e.to_string())
+}
+
+/// Get current system state (mute, playback).
+#[derive(Debug, Clone, Serialize)]
+pub struct SystemStateResponse {
+    pub is_muted: bool,
+    pub is_playing: bool,
+}
+
+#[tauri::command]
+pub fn get_system_state(state: State<AppState>) -> SystemStateResponse {
+    // Also request a fresh state check
+    state_manager::request_state_check();
+
+    let current = state.system_state.lock().unwrap();
+    SystemStateResponse {
+        is_muted: current.is_muted,
+        is_playing: current.is_playing,
+    }
 }
 
 /// Check if two InputRefs refer to the same input.

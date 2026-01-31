@@ -1,6 +1,14 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum KeyLightAction {
+    Toggle,
+    On,
+    Off,
+    SetBrightness, // Uses encoder delta
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum Capability {
     SystemVolume { step: f32 },
@@ -12,6 +20,16 @@ pub enum Capability {
     RunCommand { command: String },
     LaunchApp { command: String },
     OpenURL { url: String },
+    ElgatoKeyLight {
+        ip: String,
+        #[serde(default = "default_key_light_port")]
+        port: u16,
+        action: KeyLightAction,
+    },
+}
+
+fn default_key_light_port() -> u16 {
+    9123
 }
 
 /// Effects produced when a capability is triggered.
@@ -29,6 +47,10 @@ pub enum CapabilityEffect {
     RunCommand(String),
     LaunchApp(String),
     OpenURL(String),
+    KeyLightToggle { ip: String, port: u16 },
+    KeyLightOn { ip: String, port: u16 },
+    KeyLightOff { ip: String, port: u16 },
+    KeyLightBrightness { ip: String, port: u16, delta: i32 },
 }
 
 #[allow(dead_code)] // Reserved for future effect-based dispatch
@@ -40,6 +62,17 @@ impl Capability {
                     None
                 } else {
                     Some(CapabilityEffect::VolumeDelta(*step * delta as f32))
+                }
+            }
+            Capability::ElgatoKeyLight { ip, port, action: KeyLightAction::SetBrightness } => {
+                if delta == 0 {
+                    None
+                } else {
+                    Some(CapabilityEffect::KeyLightBrightness {
+                        ip: ip.clone(),
+                        port: *port,
+                        delta: delta as i32 * 5, // 5% per tick
+                    })
                 }
             }
             _ => None,
@@ -60,6 +93,23 @@ impl Capability {
                 Some(CapabilityEffect::LaunchApp(command.clone()))
             }
             Capability::OpenURL { url } if pressed => Some(CapabilityEffect::OpenURL(url.clone())),
+            Capability::ElgatoKeyLight { ip, port, action } if pressed => {
+                match action {
+                    KeyLightAction::Toggle => Some(CapabilityEffect::KeyLightToggle {
+                        ip: ip.clone(),
+                        port: *port,
+                    }),
+                    KeyLightAction::On => Some(CapabilityEffect::KeyLightOn {
+                        ip: ip.clone(),
+                        port: *port,
+                    }),
+                    KeyLightAction::Off => Some(CapabilityEffect::KeyLightOff {
+                        ip: ip.clone(),
+                        port: *port,
+                    }),
+                    KeyLightAction::SetBrightness => None, // Handled by encoder
+                }
+            }
             _ => None,
         }
     }

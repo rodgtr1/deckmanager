@@ -13,6 +13,7 @@ import {
   ButtonEvent,
   EncoderEvent,
   TouchSwipeEvent,
+  SystemState,
 } from "./types";
 import "./App.css";
 
@@ -23,27 +24,41 @@ export default function App() {
   const [selectedInput, setSelectedInput] = useState<InputRef | null>(null);
   const [selectedCapabilityId, setSelectedCapabilityId] = useState<string | null>(null);
   const [activeInputs, setActiveInputs] = useState<Set<string>>(new Set());
+  const [systemState, setSystemState] = useState<SystemState>({ is_muted: false, is_playing: false });
   const [error, setError] = useState<string | null>(null);
 
   // Load initial data
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [deviceInfo, bindingsList, capsList] = await Promise.all([
+        const [deviceInfo, bindingsList, capsList, state] = await Promise.all([
           invoke<DeviceInfo | null>("get_device_info"),
           invoke<Binding[]>("get_bindings"),
           invoke<CapabilityInfo[]>("get_capabilities"),
+          invoke<SystemState>("get_system_state"),
         ]);
 
         setDevice(deviceInfo);
         setBindings(bindingsList);
         setCapabilities(capsList);
+        setSystemState(state);
       } catch (e) {
         setError(`Failed to load: ${e}`);
       }
     };
 
     loadData();
+  }, []);
+
+  // Listen for system state changes
+  useEffect(() => {
+    const unlistenState = listen<SystemState>("state:change", (e) => {
+      setSystemState(e.payload);
+    });
+
+    return () => {
+      unlistenState.then((f) => f());
+    };
   }, []);
 
   // Listen for Stream Deck events
@@ -119,6 +134,7 @@ export default function App() {
       icon?: string,
       label?: string,
       buttonImage?: string,
+      buttonImageAlt?: string,
       showLabel?: boolean
     ) => {
       try {
@@ -128,6 +144,7 @@ export default function App() {
           icon: icon ?? null,
           label: label ?? null,
           button_image: buttonImage ?? null,
+          button_image_alt: buttonImageAlt ?? null,
           show_label: showLabel ?? null,
         };
         console.log("handleSetBinding params:", params);
@@ -198,6 +215,12 @@ export default function App() {
           case "OpenURL":
             capability = { type: "OpenURL", url: "https://" };
             break;
+          case "ElgatoKeyLightToggle":
+            capability = { type: "ElgatoKeyLight", ip: "192.168.1.100", port: 9123, action: "Toggle" };
+            break;
+          case "ElgatoKeyLightBrightness":
+            capability = { type: "ElgatoKeyLight", ip: "192.168.1.100", port: 9123, action: "SetBrightness" };
+            break;
           default:
             return;
         }
@@ -249,6 +272,12 @@ export default function App() {
       case "OpenURL":
         capability = { type: "OpenURL", url: "https://" };
         break;
+      case "ElgatoKeyLightToggle":
+        capability = { type: "ElgatoKeyLight", ip: "192.168.1.100", port: 9123, action: "Toggle" };
+        break;
+      case "ElgatoKeyLightBrightness":
+        capability = { type: "ElgatoKeyLight", ip: "192.168.1.100", port: 9123, action: "SetBrightness" };
+        break;
       default:
         return;
     }
@@ -296,6 +325,7 @@ export default function App() {
           bindings={bindings}
           selectedInput={selectedInput}
           activeInputs={activeInputs}
+          systemState={systemState}
           onSelectInput={setSelectedInput}
           onDrop={handleDrop}
         />

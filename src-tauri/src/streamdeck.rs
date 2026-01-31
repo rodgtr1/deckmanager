@@ -1,8 +1,10 @@
 use crate::binding::{Binding, InputRef};
 use crate::button_renderer::{button_size_for_kind, encoder_lcd_size_for_kind, ButtonRenderer, LcdRenderer};
-use crate::capability::Capability;
+use crate::capability::{Capability, KeyLightAction};
 use crate::device::DeviceInfo;
+use crate::elgato_key_light;
 use crate::input_processor::{InputProcessor, LogicalEvent};
+use crate::state_manager::{self, SystemState};
 use anyhow::{Context, Result};
 use elgato_streamdeck::{images::ImageRect, info::Kind, list_devices, StreamDeck, StreamDeckInput};
 use hidapi::HidApi;
@@ -24,6 +26,7 @@ pub fn run(
     app: AppHandle,
     device_info_state: Arc<Mutex<Option<DeviceInfo>>>,
     bindings_state: Arc<Mutex<Vec<Binding>>>,
+    system_state: Arc<Mutex<SystemState>>,
 ) -> Result<()> {
     let hid = HidApi::new().context("hid init failed")?;
     let devices = list_devices(&hid);
@@ -64,12 +67,16 @@ pub fn run(
     };
 
     // Initial image sync on startup
-    if let Ok(bindings) = bindings_state.lock() {
-        if let Some(ref renderer) = button_renderer {
-            sync_button_images(&mut deck, &bindings, renderer, device_kind);
-        }
-        if let Some(ref renderer) = lcd_renderer {
-            sync_lcd_images(&mut deck, &bindings, renderer, device_kind);
+    {
+        let bindings = bindings_state.lock().ok();
+        let state = system_state.lock().ok();
+        if let (Some(bindings), Some(state)) = (bindings, state) {
+            if let Some(ref renderer) = button_renderer {
+                sync_button_images(&mut deck, &bindings, renderer, device_kind, &state);
+            }
+            if let Some(ref renderer) = lcd_renderer {
+                sync_lcd_images(&mut deck, &bindings, renderer, device_kind, &state);
+            }
         }
     }
 
@@ -78,12 +85,14 @@ pub fn run(
     loop {
         // Check for image sync requests
         if SYNC_IMAGES_FLAG.swap(false, Ordering::SeqCst) {
-            if let Ok(bindings) = bindings_state.lock() {
+            let bindings = bindings_state.lock().ok();
+            let state = system_state.lock().ok();
+            if let (Some(bindings), Some(state)) = (bindings, state) {
                 if let Some(ref renderer) = button_renderer {
-                    sync_button_images(&mut deck, &bindings, renderer, device_kind);
+                    sync_button_images(&mut deck, &bindings, renderer, device_kind, &state);
                 }
                 if let Some(ref renderer) = lcd_renderer {
-                    sync_lcd_images(&mut deck, &bindings, renderer, device_kind);
+                    sync_lcd_images(&mut deck, &bindings, renderer, device_kind, &state);
                 }
             }
         }
@@ -147,12 +156,40 @@ fn create_lcd_renderer(kind: Kind) -> Result<Option<LcdRenderer>> {
     }
 }
 
+/// Get the effective image for a binding based on current system state.
+/// Returns (image_to_use, has_image)
+fn get_effective_image<'a>(binding: &'a Binding, state: &SystemState) -> Option<&'a str> {
+    // Check if this capability has an "active" state
+    let is_active = match &binding.capability {
+        Capability::ToggleMute => state.is_muted,
+        Capability::MediaPlayPause => state.is_playing,
+        Capability::ElgatoKeyLight { ip, port, .. } => {
+            // Check if key light is on
+            state.key_lights.get(&format!("{}:{}", ip, port))
+                .map(|s| s.on)
+                .unwrap_or(false)
+        }
+        _ => false,
+    };
+
+    // If active and we have an alt image, use it
+    if is_active {
+        if let Some(ref alt) = binding.button_image_alt {
+            return Some(alt.as_str());
+        }
+    }
+
+    // Otherwise use the default image
+    binding.button_image.as_deref()
+}
+
 /// Sync all button images from bindings to hardware.
 fn sync_button_images(
     deck: &mut StreamDeck,
     bindings: &[Binding],
     renderer: &ButtonRenderer,
     kind: Kind,
+    state: &SystemState,
 ) {
     let button_count = kind.key_count();
 
@@ -166,7 +203,21 @@ fn sync_button_images(
                 continue;
             }
 
-            match renderer.render_binding(binding) {
+            // Get effective image based on state
+            let effective_image = get_effective_image(binding, state);
+
+            // Create a modified binding with the effective image for rendering
+            let render_binding = Binding {
+                input: binding.input.clone(),
+                capability: binding.capability.clone(),
+                icon: binding.icon.clone(),
+                label: binding.label.clone(),
+                button_image: effective_image.map(String::from),
+                button_image_alt: None, // Not needed for rendering
+                show_label: binding.show_label,
+            };
+
+            match renderer.render_binding(&render_binding) {
                 Ok(Some(img)) => {
                     if let Err(e) = deck.set_button_image(key, img) {
                         eprintln!("Failed to set button {key} image: {e}");
@@ -211,6 +262,7 @@ fn sync_lcd_images(
     bindings: &[Binding],
     renderer: &LcdRenderer,
     kind: Kind,
+    state: &SystemState,
 ) {
     let encoder_count = kind.encoder_count();
     if encoder_count == 0 {
@@ -235,14 +287,41 @@ fn sync_lcd_images(
         // Calculate X position for this encoder section
         let x = (encoder_idx as u32 * section_w) as u16;
 
-        // Try EncoderPress image first, then Encoder rotation image, then empty
-        let binding_to_render = press_binding
-            .filter(|b| b.button_image.is_some())
-            .or_else(|| rotate_binding.filter(|b| b.button_image.is_some()));
+        // Determine which binding has an image (considering state)
+        let (binding_to_use, effective_image) = {
+            // Try press binding first
+            if let Some(b) = press_binding {
+                let img = get_effective_image(b, state);
+                if img.is_some() {
+                    (Some(b), img)
+                } else if let Some(rb) = rotate_binding {
+                    let rimg = get_effective_image(rb, state);
+                    (Some(rb), rimg)
+                } else {
+                    (None, None)
+                }
+            } else if let Some(rb) = rotate_binding {
+                let rimg = get_effective_image(rb, state);
+                (Some(rb), rimg)
+            } else {
+                (None, None)
+            }
+        };
 
-        match binding_to_render {
-            Some(binding) => {
-                match renderer.render_binding(binding) {
+        match (binding_to_use, effective_image) {
+            (Some(binding), Some(img_path)) => {
+                // Create a modified binding with the effective image for rendering
+                let render_binding = Binding {
+                    input: binding.input.clone(),
+                    capability: binding.capability.clone(),
+                    icon: binding.icon.clone(),
+                    label: binding.label.clone(),
+                    button_image: Some(img_path.to_string()),
+                    button_image_alt: None,
+                    show_label: binding.show_label,
+                };
+
+                match renderer.render_binding(&render_binding) {
                     Ok(Some(img)) => {
                         match ImageRect::from_image(img) {
                             Ok(rect) => {
@@ -256,7 +335,6 @@ fn sync_lcd_images(
                         }
                     }
                     Ok(None) => {
-                        // No image configured, write empty section
                         let empty = renderer.create_empty();
                         if let Ok(rect) = ImageRect::from_image(empty) {
                             let _ = deck.write_lcd(x, 0, &rect);
@@ -267,7 +345,7 @@ fn sync_lcd_images(
                     }
                 }
             }
-            None => {
+            _ => {
                 // No binding with image, write empty section
                 let empty = renderer.create_empty();
                 if let Ok(rect) = ImageRect::from_image(empty) {
@@ -287,18 +365,23 @@ fn handle_logical_event(event: LogicalEvent, bindings: &[Binding]) {
         match (&binding.capability, &event) {
             (Capability::ToggleMute, LogicalEvent::EncoderPress(e)) if e.pressed => {
                 toggle_mute();
+                // Request immediate state check to update icon
+                state_manager::request_state_check();
             }
 
             (Capability::ToggleMute, LogicalEvent::Button(e)) if e.pressed => {
                 toggle_mute();
+                state_manager::request_state_check();
             }
 
             (Capability::MediaPlayPause, LogicalEvent::EncoderPress(e)) if e.pressed => {
                 media_play_pause();
+                state_manager::request_state_check();
             }
 
             (Capability::MediaPlayPause, LogicalEvent::Button(e)) if e.pressed => {
                 media_play_pause();
+                state_manager::request_state_check();
             }
 
             (Capability::MediaNext, LogicalEvent::EncoderPress(e)) if e.pressed => {
@@ -353,8 +436,44 @@ fn handle_logical_event(event: LogicalEvent, bindings: &[Binding]) {
                 apply_volume_delta(e.delta as f32 * step);
             }
 
+            // Elgato Key Light controls
+            (Capability::ElgatoKeyLight { ip, port, action }, LogicalEvent::Button(e)) if e.pressed => {
+                handle_key_light_button(ip, *port, action);
+                state_manager::request_state_check();
+            }
+
+            (Capability::ElgatoKeyLight { ip, port, action }, LogicalEvent::EncoderPress(e)) if e.pressed => {
+                handle_key_light_button(ip, *port, action);
+                state_manager::request_state_check();
+            }
+
+            (Capability::ElgatoKeyLight { ip, port, action: KeyLightAction::SetBrightness }, LogicalEvent::Encoder(e)) => {
+                handle_key_light_brightness(ip, *port, e.delta);
+                state_manager::request_state_check();
+            }
+
             _ => {}
         }
+    }
+}
+
+fn handle_key_light_button(ip: &str, port: u16, action: &KeyLightAction) {
+    let result = match action {
+        KeyLightAction::Toggle => elgato_key_light::toggle(ip, port).map(|_| ()),
+        KeyLightAction::On => elgato_key_light::turn_on(ip, port),
+        KeyLightAction::Off => elgato_key_light::turn_off(ip, port),
+        KeyLightAction::SetBrightness => Ok(()), // Handled by encoder
+    };
+
+    if let Err(e) = result {
+        eprintln!("Key Light error: {e}");
+    }
+}
+
+fn handle_key_light_brightness(ip: &str, port: u16, delta: i8) {
+    let brightness_delta = delta as i32 * 5; // 5% per tick
+    if let Err(e) = elgato_key_light::adjust_brightness(ip, port, brightness_delta) {
+        eprintln!("Key Light brightness error: {e}");
     }
 }
 

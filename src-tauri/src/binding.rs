@@ -25,9 +25,12 @@ pub struct Binding {
     /// Custom display text for this binding (UI only)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
-    /// File path or URL for hardware button image
+    /// File path or URL for hardware button image (default state)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub button_image: Option<String>,
+    /// Alternate image shown when state is "active" (e.g., muted, playing)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub button_image_alt: Option<String>,
     /// Whether to render label on hardware button
     #[serde(skip_serializing_if = "Option::is_none")]
     pub show_label: Option<bool>,

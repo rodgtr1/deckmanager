@@ -32,4 +32,4 @@ dirs = "5"
 image = "0.25"
 imageproc = "0.24"
 ab_glyph = "0.2"
-reqwest = { version = "0.12", features = ["blocking"] }
+reqwest = { version = "0.12", features = ["blocking", "json"] }
