@@ -1,4 +1,4 @@
-//! Simple in-memory image cache.
+//! Simple in-memory image cache with LRU eviction.
 //!
 //! Caches loaded images to avoid re-fetching URLs on every sync.
 //! Local files are also cached but can be invalidated if modified.
@@ -15,6 +15,8 @@ struct CacheEntry {
     image: DynamicImage,
     /// When this entry was cached
     cached_at: Instant,
+    /// When this entry was last accessed (for LRU eviction)
+    last_accessed: Instant,
     /// For local files: modification time when cached
     file_mtime: Option<SystemTime>,
 }
@@ -24,6 +26,9 @@ static IMAGE_CACHE: Mutex<Option<ImageCache>> = Mutex::new(None);
 
 /// Maximum age for URL cache entries (5 minutes)
 const URL_CACHE_TTL: Duration = Duration::from_secs(300);
+
+/// Maximum number of entries in the cache (prevents unbounded growth)
+const MAX_CACHE_ENTRIES: usize = 100;
 
 /// Image cache implementation
 struct ImageCache {
@@ -38,8 +43,8 @@ impl ImageCache {
     }
 
     /// Get a cached image if valid, or None if not cached/expired
-    fn get(&self, source: &str) -> Option<DynamicImage> {
-        let entry = self.entries.get(source)?;
+    fn get(&mut self, source: &str) -> Option<DynamicImage> {
+        let entry = self.entries.get_mut(source)?;
 
         // Check if entry is still valid
         if source.starts_with("http://") || source.starts_with("https://") {
@@ -60,11 +65,28 @@ impl ImageCache {
             }
         }
 
+        // Update last accessed time for LRU tracking
+        entry.last_accessed = Instant::now();
+
         Some(entry.image.clone())
     }
 
-    /// Store an image in the cache
+    /// Store an image in the cache, evicting oldest entries if at capacity
     fn put(&mut self, source: &str, image: DynamicImage) {
+        // Evict oldest entries if at capacity (LRU eviction)
+        while self.entries.len() >= MAX_CACHE_ENTRIES {
+            if let Some(oldest_key) = self
+                .entries
+                .iter()
+                .min_by_key(|(_, e)| e.last_accessed)
+                .map(|(k, _)| k.clone())
+            {
+                self.entries.remove(&oldest_key);
+            } else {
+                break;
+            }
+        }
+
         let file_mtime = if !source.starts_with("http://") && !source.starts_with("https://") {
             // Get file modification time for local files
             std::fs::metadata(source)
@@ -74,11 +96,13 @@ impl ImageCache {
             None
         };
 
+        let now = Instant::now();
         self.entries.insert(
             source.to_string(),
             CacheEntry {
                 image,
-                cached_at: Instant::now(),
+                cached_at: now,
+                last_accessed: now,
                 file_mtime,
             },
         );
@@ -159,13 +183,16 @@ mod tests {
 
     #[test]
     fn test_cache_entry_creation() {
+        let now = Instant::now();
         let cache_entry = CacheEntry {
             image: DynamicImage::new_rgba8(1, 1),
-            cached_at: Instant::now(),
+            cached_at: now,
+            last_accessed: now,
             file_mtime: None,
         };
 
         assert!(cache_entry.cached_at.elapsed() < Duration::from_secs(1));
+        assert!(cache_entry.last_accessed.elapsed() < Duration::from_secs(1));
     }
 
     #[test]
@@ -187,7 +214,7 @@ mod tests {
 
     #[test]
     fn test_cache_miss() {
-        let cache = ImageCache::new();
+        let mut cache = ImageCache::new();
         let retrieved = cache.get("nonexistent_key");
         assert!(retrieved.is_none());
     }
@@ -203,5 +230,40 @@ mod tests {
         cache.clear();
 
         assert!(cache.entries.is_empty());
+    }
+
+    #[test]
+    fn test_max_cache_entries_constant() {
+        // Max cache entries should be reasonable (50-500)
+        assert!(MAX_CACHE_ENTRIES >= 50);
+        assert!(MAX_CACHE_ENTRIES <= 500);
+    }
+
+    #[test]
+    fn test_lru_eviction() {
+        let mut cache = ImageCache::new();
+
+        // Fill cache to just under max
+        for i in 0..(MAX_CACHE_ENTRIES - 1) {
+            cache.put(&format!("key{}", i), DynamicImage::new_rgba8(1, 1));
+        }
+
+        assert_eq!(cache.entries.len(), MAX_CACHE_ENTRIES - 1);
+
+        // Access first entry to make it recently used
+        let _ = cache.get("key0");
+
+        // Add one more to hit max
+        cache.put("new_key", DynamicImage::new_rgba8(1, 1));
+
+        // Should still be at max (no eviction needed yet since we had room)
+        assert!(cache.entries.len() <= MAX_CACHE_ENTRIES);
+
+        // Add another - should evict oldest (key1, not key0 since we accessed it)
+        cache.put("another_key", DynamicImage::new_rgba8(1, 1));
+
+        assert!(cache.entries.len() <= MAX_CACHE_ENTRIES);
+        // key0 should still be there since we accessed it
+        assert!(cache.get("key0").is_some());
     }
 }

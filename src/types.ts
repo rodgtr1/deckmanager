@@ -136,6 +136,49 @@ export function getInputDisplayName(input: InputRef): string {
   }
 }
 
+/**
+ * Create a default Capability object from a capability ID.
+ * Returns null for unknown capability IDs.
+ */
+export function createDefaultCapability(capabilityId: string): Capability | null {
+  switch (capabilityId) {
+    case "SystemAudio":
+      return { type: "SystemAudio", step: 0.02 };
+    case "Mute":
+      return { type: "Mute" };
+    case "VolumeUp":
+      return { type: "VolumeUp", step: 0.05 };
+    case "VolumeDown":
+      return { type: "VolumeDown", step: 0.05 };
+    case "Microphone":
+      return { type: "Microphone", step: 0.02 };
+    case "MicMute":
+      return { type: "MicMute" };
+    case "MicVolumeUp":
+      return { type: "MicVolumeUp", step: 0.05 };
+    case "MicVolumeDown":
+      return { type: "MicVolumeDown", step: 0.05 };
+    case "MediaPlayPause":
+      return { type: "MediaPlayPause" };
+    case "MediaNext":
+      return { type: "MediaNext" };
+    case "MediaPrevious":
+      return { type: "MediaPrevious" };
+    case "MediaStop":
+      return { type: "MediaStop" };
+    case "RunCommand":
+      return { type: "RunCommand", command: "", toggle: false };
+    case "LaunchApp":
+      return { type: "LaunchApp", command: "" };
+    case "OpenURL":
+      return { type: "OpenURL", url: "https://" };
+    case "ElgatoKeyLight":
+      return { type: "ElgatoKeyLight", ip: "192.168.1.100", port: 9123, action: "Toggle" };
+    default:
+      return null;
+  }
+}
+
 // Get display name for a capability
 export function getCapabilityDisplayName(cap: Capability): string {
   switch (cap.type) {

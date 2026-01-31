@@ -1,5 +1,8 @@
 use serde::{Deserialize, Serialize};
 
+/// Brightness change percentage per encoder tick for Key Lights
+pub const KEY_LIGHT_BRIGHTNESS_STEP: i32 = 2;
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum KeyLightAction {
     Toggle,
@@ -102,7 +105,7 @@ impl Capability {
                     Some(CapabilityEffect::KeyLightBrightness {
                         ip: ip.clone(),
                         port: *port,
-                        delta: delta as i32 * 2, // 2% per tick
+                        delta: delta as i32 * KEY_LIGHT_BRIGHTNESS_STEP,
                     })
                 }
             }

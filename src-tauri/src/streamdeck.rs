@@ -1,6 +1,6 @@
 use crate::binding::{Binding, InputRef};
 use crate::button_renderer::{button_size_for_kind, encoder_lcd_size_for_kind, ButtonRenderer, LcdRenderer};
-use crate::capability::{Capability, KeyLightAction};
+use crate::capability::{Capability, KeyLightAction, KEY_LIGHT_BRIGHTNESS_STEP};
 use crate::device::DeviceInfo;
 use crate::elgato_key_light;
 use crate::events::{ConnectionStatusEvent, PageChangeEvent};
@@ -10,10 +10,11 @@ use crate::state_manager::{self, SystemState};
 use anyhow::{Context, Result};
 use elgato_streamdeck::{images::ImageRect, info::Kind, list_devices, StreamDeck, StreamDeckInput};
 use hidapi::HidApi;
+use std::collections::HashMap;
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
 
 /// Global debounced Key Light controller
@@ -26,6 +27,36 @@ fn get_key_light_controller() -> &'static KeyLightController {
 
 /// Interval for checking device reconnection
 const RECONNECT_INTERVAL: Duration = Duration::from_secs(2);
+
+/// Timeout for reading input from Stream Deck (affects responsiveness)
+const INPUT_POLL_TIMEOUT: Duration = Duration::from_millis(50);
+
+/// Minimum interval between command executions (prevents rapid-fire from stuck buttons)
+const MIN_COMMAND_INTERVAL: Duration = Duration::from_millis(200);
+
+/// Track last execution time for rate limiting
+static COMMAND_RATE_LIMITER: OnceLock<Mutex<HashMap<String, Instant>>> = OnceLock::new();
+
+/// Get or initialize the rate limiter
+fn get_rate_limiter() -> &'static Mutex<HashMap<String, Instant>> {
+    COMMAND_RATE_LIMITER.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Check if a command can be executed (rate limiting)
+/// Returns true if enough time has passed since the last execution
+fn check_rate_limit(key: &str) -> bool {
+    let rate_limiter = get_rate_limiter();
+    let mut times = rate_limiter.lock().unwrap_or_else(|e| e.into_inner());
+
+    if let Some(last_time) = times.get(key) {
+        if last_time.elapsed() < MIN_COMMAND_INTERVAL {
+            return false; // Rate limited
+        }
+    }
+
+    times.insert(key.to_string(), Instant::now());
+    true
+}
 
 /// Flag to signal when button images need to be re-synced.
 pub static SYNC_IMAGES_FLAG: AtomicBool = AtomicBool::new(false);
@@ -173,7 +204,7 @@ fn run_event_loop(
         }
 
         // Read input with timeout
-        let input = match deck.read_input(Some(Duration::from_millis(50))) {
+        let input = match deck.read_input(Some(INPUT_POLL_TIMEOUT)) {
             Ok(input) => input,
             Err(e) => {
                 // Device disconnected or error
@@ -709,47 +740,54 @@ fn handle_logical_event(event: LogicalEvent, bindings: &[Binding], system_state:
 }
 
 fn handle_key_light_button(ip: &str, port: u16, action: &KeyLightAction, system_state: &Arc<Mutex<SystemState>>) {
-    let result = match action {
-        KeyLightAction::Toggle => elgato_key_light::toggle(ip, port).map(|_| ()),
-        KeyLightAction::On => elgato_key_light::turn_on(ip, port),
-        KeyLightAction::Off => elgato_key_light::turn_off(ip, port),
-        KeyLightAction::SetBrightness => Ok(()), // Handled by encoder
-    };
+    // Spawn background thread to avoid blocking the event loop
+    let ip = ip.to_string();
+    let port = port;
+    let action = action.clone();
+    let state = Arc::clone(system_state);
 
-    if let Err(e) = result {
-        eprintln!("Key Light error: {e}");
-    }
+    std::thread::spawn(move || {
+        let result = match action {
+            KeyLightAction::Toggle => elgato_key_light::toggle(&ip, port).map(|_| ()),
+            KeyLightAction::On => elgato_key_light::turn_on(&ip, port),
+            KeyLightAction::Off => elgato_key_light::turn_off(&ip, port),
+            KeyLightAction::SetBrightness => Ok(()), // Handled by encoder
+        };
 
-    // Update key light state and trigger image sync
-    update_key_light_state_and_sync(ip, port, system_state);
+        if let Err(e) = result {
+            eprintln!("Key Light error: {e}");
+        }
 
-    // Also update the controller's cache so brightness adjustments have accurate state
-    if let Ok(state) = elgato_key_light::get_state(ip, port) {
-        get_key_light_controller().update_cached_state(ip, port, &state);
-    }
+        // Update key light state and trigger image sync
+        match elgato_key_light::get_state(&ip, port) {
+            Ok(light_state) => {
+                // Update system state
+                if let Ok(mut s) = state.lock() {
+                    let key = format!("{}:{}", ip, port);
+                    s.key_lights.insert(key, light_state.clone());
+                }
+
+                // Update controller's cache so brightness adjustments have accurate state
+                get_key_light_controller().update_cached_state(&ip, port, &light_state);
+            }
+            Err(e) => {
+                eprintln!("Failed to fetch Key Light state after action: {}", e);
+            }
+        }
+
+        // Request image sync to update hardware display
+        request_image_sync();
+    });
 }
 
 fn handle_key_light_brightness(ip: &str, port: u16, delta: i8, _system_state: &Arc<Mutex<SystemState>>) {
-    let brightness_delta = delta as i32 * 2; // 2% per tick
+    let brightness_delta = delta as i32 * KEY_LIGHT_BRIGHTNESS_STEP;
 
     // Queue the adjustment - will be debounced and sent in batch
     get_key_light_controller().queue_brightness_delta(ip, port, brightness_delta);
 
     // Note: State sync happens after debounce in the controller's background thread
     // We don't block the event loop waiting for HTTP responses
-}
-
-fn update_key_light_state_and_sync(ip: &str, port: u16, system_state: &Arc<Mutex<SystemState>>) {
-    // Fetch current key light state
-    if let Ok(light_state) = elgato_key_light::get_state(ip, port) {
-        if let Ok(mut state) = system_state.lock() {
-            let key = format!("{}:{}", ip, port);
-            state.key_lights.insert(key, light_state);
-        }
-    }
-
-    // Request image sync to update hardware display
-    request_image_sync();
 }
 
 fn get_current_volume() -> Option<f32> {
@@ -785,15 +823,21 @@ fn apply_volume_delta(delta: f32) {
 }
 
 fn toggle_mute() {
-    let _ = Command::new("wpctl")
+    if let Err(e) = Command::new("wpctl")
         .args(["set-mute", "@DEFAULT_AUDIO_SINK@", "toggle"])
-        .status();
+        .status()
+    {
+        eprintln!("Failed to toggle mute (is wpctl installed?): {}", e);
+    }
 }
 
 fn toggle_mic_mute() {
-    let _ = Command::new("wpctl")
+    if let Err(e) = Command::new("wpctl")
         .args(["set-mute", "@DEFAULT_AUDIO_SOURCE@", "toggle"])
-        .status();
+        .status()
+    {
+        eprintln!("Failed to toggle mic mute (is wpctl installed?): {}", e);
+    }
 }
 
 fn get_current_mic_volume() -> Option<f32> {
@@ -829,31 +873,112 @@ fn apply_mic_volume_delta(delta: f32) {
 }
 
 fn media_play_pause() {
-    let _ = Command::new("playerctl").arg("play-pause").status();
+    if let Err(e) = Command::new("playerctl").arg("play-pause").status() {
+        eprintln!("Failed to play/pause media (is playerctl installed?): {}", e);
+    }
 }
 
 fn media_next() {
-    let _ = Command::new("playerctl").arg("next").status();
+    if let Err(e) = Command::new("playerctl").arg("next").status() {
+        eprintln!("Failed to skip to next track: {}", e);
+    }
 }
 
 fn media_previous() {
-    let _ = Command::new("playerctl").arg("previous").status();
+    if let Err(e) = Command::new("playerctl").arg("previous").status() {
+        eprintln!("Failed to go to previous track: {}", e);
+    }
 }
 
 fn media_stop() {
-    let _ = Command::new("playerctl").arg("stop").status();
+    if let Err(e) = Command::new("playerctl").arg("stop").status() {
+        eprintln!("Failed to stop media: {}", e);
+    }
 }
 
 fn run_shell_command(cmd: &str) {
-    let _ = Command::new("sh").args(["-c", cmd]).spawn();
+    let cmd = cmd.trim();
+    if cmd.is_empty() {
+        eprintln!("Warning: Attempted to run empty command");
+        return;
+    }
+
+    // Rate limit to prevent rapid-fire execution
+    let rate_key = format!("cmd:{}", cmd);
+    if !check_rate_limit(&rate_key) {
+        #[cfg(debug_assertions)]
+        eprintln!("Rate limited: {}", cmd);
+        return;
+    }
+
+    #[cfg(debug_assertions)]
+    eprintln!("Executing shell command: {}", cmd);
+
+    match Command::new("sh").args(["-c", cmd]).spawn() {
+        Ok(_) => {}
+        Err(e) => eprintln!("Failed to execute command '{}': {}", cmd, e),
+    }
 }
 
 fn launch_app(app: &str) {
-    let _ = Command::new(app).spawn();
+    let app = app.trim();
+    if app.is_empty() {
+        eprintln!("Warning: Attempted to launch empty application name");
+        return;
+    }
+
+    // Basic validation: reject paths with suspicious patterns
+    if app.contains("..") || (app.starts_with('/') && app.contains(' ')) {
+        eprintln!("Warning: Suspicious application path rejected: {}", app);
+        return;
+    }
+
+    // Rate limit to prevent rapid-fire execution
+    let rate_key = format!("app:{}", app);
+    if !check_rate_limit(&rate_key) {
+        #[cfg(debug_assertions)]
+        eprintln!("Rate limited: {}", app);
+        return;
+    }
+
+    #[cfg(debug_assertions)]
+    eprintln!("Launching application: {}", app);
+
+    match Command::new(app).spawn() {
+        Ok(_) => {}
+        Err(e) => eprintln!("Failed to launch '{}': {}", app, e),
+    }
 }
 
 fn open_url(url: &str) {
-    let _ = Command::new("xdg-open").arg(url).spawn();
+    let url = url.trim();
+    if url.is_empty() {
+        eprintln!("Warning: Attempted to open empty URL");
+        return;
+    }
+
+    // Validate URL scheme - only allow http, https, and common safe schemes
+    let valid_schemes = ["http://", "https://", "mailto:", "tel:"];
+    if !valid_schemes.iter().any(|scheme| url.starts_with(scheme)) {
+        eprintln!("Warning: Rejected URL with unsupported scheme: {}", url);
+        return;
+    }
+
+    // Rate limit to prevent rapid-fire execution
+    let rate_key = format!("url:{}", url);
+    if !check_rate_limit(&rate_key) {
+        #[cfg(debug_assertions)]
+        eprintln!("Rate limited: {}", url);
+        return;
+    }
+
+    #[cfg(debug_assertions)]
+    eprintln!("Opening URL: {}", url);
+
+    match Command::new("xdg-open").arg(url).spawn() {
+        Ok(_) => {}
+        Err(e) => eprintln!("Failed to open URL '{}': {}", url, e),
+    }
 }
 
 fn emit_event(app: &AppHandle, event: LogicalEvent) {

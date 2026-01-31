@@ -5,6 +5,7 @@
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
+use std::net::IpAddr;
 use std::thread;
 use std::time::Duration;
 
@@ -13,6 +14,31 @@ const MAX_RETRIES: u32 = 2;
 
 /// Delay between retry attempts
 const RETRY_DELAY: Duration = Duration::from_millis(100);
+
+/// Validate that an IP address is safe to connect to (private/local network only)
+fn validate_ip(ip: &str) -> Result<()> {
+    let addr: IpAddr = ip.parse().context("Invalid IP address format")?;
+
+    let is_safe = match addr {
+        IpAddr::V4(v4) => {
+            v4.is_private()      // 10.x.x.x, 172.16-31.x.x, 192.168.x.x
+                || v4.is_loopback()  // 127.x.x.x
+                || v4.is_link_local() // 169.254.x.x
+        }
+        IpAddr::V6(v6) => {
+            v6.is_loopback() // ::1
+        }
+    };
+
+    if !is_safe {
+        anyhow::bail!(
+            "Key Light IP address must be on a private/local network, got: {}",
+            ip
+        );
+    }
+
+    Ok(())
+}
 
 /// Execute a fallible operation with retries
 fn with_retry<T, F>(mut operation: F) -> Result<T>
@@ -74,6 +100,7 @@ struct LightRequestData {
 
 /// Get the current state of a Key Light (with retry)
 pub fn get_state(ip: &str, port: u16) -> Result<KeyLightState> {
+    validate_ip(ip)?;
     let url = format!("http://{}:{}/elgato/lights", ip, port);
 
     with_retry(|| {
@@ -100,6 +127,7 @@ pub fn get_state(ip: &str, port: u16) -> Result<KeyLightState> {
 
 /// Set the state of a Key Light (with retry)
 pub fn set_state(ip: &str, port: u16, on: bool, brightness: u8) -> Result<()> {
+    validate_ip(ip)?;
     let url = format!("http://{}:{}/elgato/lights", ip, port);
 
     let request = LightsRequest {

@@ -13,17 +13,17 @@ Object.defineProperty(window, "localStorage", { value: localStorageMock });
 
 const mockCapabilities: CapabilityInfo[] = [
   {
-    id: "SystemVolume",
-    name: "System Volume",
-    description: "Adjust system volume",
+    id: "SystemAudio",
+    name: "System Audio",
+    description: "Full audio control for encoders",
     supports_button: false,
     supports_encoder: true,
-    supports_encoder_press: false,
+    supports_encoder_press: true,
     parameters: [{ name: "step", param_type: "number", default_value: "0.02", description: "Volume step" }],
   },
   {
-    id: "ToggleMute",
-    name: "Toggle Mute",
+    id: "Mute",
+    name: "Mute",
     description: "Toggle audio mute",
     supports_button: true,
     supports_encoder: false,
@@ -41,7 +41,7 @@ const mockCapabilities: CapabilityInfo[] = [
   },
   {
     id: "ElgatoKeyLight",
-    name: "Elgato Key Light",
+    name: "Key Light",
     description: "Control Elgato Key Light",
     supports_button: true,
     supports_encoder: true,
@@ -89,8 +89,8 @@ describe("CapabilityBrowser", () => {
       />
     );
     // Audio module should be expanded by default
-    expect(screen.getByText("System Volume")).toBeInTheDocument();
-    expect(screen.getByText("Toggle Mute")).toBeInTheDocument();
+    expect(screen.getByText("System Audio")).toBeInTheDocument();
+    expect(screen.getByText("Mute")).toBeInTheDocument();
     expect(screen.getByText("Play/Pause")).toBeInTheDocument();
   });
 
@@ -104,8 +104,8 @@ describe("CapabilityBrowser", () => {
       />
     );
 
-    fireEvent.click(screen.getByText("Toggle Mute"));
-    expect(onSelect).toHaveBeenCalledWith("ToggleMute");
+    fireEvent.click(screen.getByText("Mute"));
+    expect(onSelect).toHaveBeenCalledWith("Mute");
   });
 
   it("highlights selected capability", () => {
@@ -113,11 +113,11 @@ describe("CapabilityBrowser", () => {
       <CapabilityBrowser
         capabilities={mockCapabilities}
         onSelect={vi.fn()}
-        selectedCapabilityId="ToggleMute"
+        selectedCapabilityId="Mute"
       />
     );
 
-    const item = screen.getByText("Toggle Mute").closest(".capability-item");
+    const item = screen.getByText("Mute").closest(".capability-item");
     expect(item).toHaveClass("selected");
   });
 
@@ -134,7 +134,7 @@ describe("CapabilityBrowser", () => {
     fireEvent.click(screen.getByText("Audio"));
 
     // Capabilities should no longer be visible
-    expect(screen.queryByText("System Volume")).not.toBeInTheDocument();
+    expect(screen.queryByText("System Audio")).not.toBeInTheDocument();
   });
 
   it("sets draggable attribute on capability items", () => {
@@ -146,18 +146,18 @@ describe("CapabilityBrowser", () => {
       />
     );
 
-    const item = screen.getByText("Toggle Mute").closest(".capability-item");
+    const item = screen.getByText("Mute").closest(".capability-item");
     expect(item).toHaveAttribute("draggable", "true");
   });
 });
 
 describe("getCapabilityIcon", () => {
-  it("returns correct icon for SystemVolume", () => {
-    expect(getCapabilityIcon("SystemVolume")).toBe("\u{1F50A}");
+  it("returns correct icon for SystemAudio", () => {
+    expect(getCapabilityIcon("SystemAudio")).toBe("\u{1F50A}");
   });
 
-  it("returns correct icon for ToggleMute", () => {
-    expect(getCapabilityIcon("ToggleMute")).toBe("\u{1F507}");
+  it("returns correct icon for Mute", () => {
+    expect(getCapabilityIcon("Mute")).toBe("\u{1F507}");
   });
 
   it("returns correct icon for ElgatoKeyLight", () => {

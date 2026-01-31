@@ -1,5 +1,6 @@
 #!/bin/bash
-# ArchDeck - Stream Deck udev rules installer
+# Stream Deck udev rules installer
+# Reads app name from tauri.conf.json for consistent naming
 # Run with: sudo ./setup-udev.sh
 
 set -e
@@ -7,6 +8,13 @@ set -e
 RULES_FILE="70-streamdeck.rules"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEST="/etc/udev/rules.d/$RULES_FILE"
+
+# Extract app name from tauri.conf.json
+TAURI_CONF="$SCRIPT_DIR/../tauri.conf.json"
+if [ -f "$TAURI_CONF" ]; then
+    APP_NAME_LOWER=$(grep -o '"productName"[[:space:]]*:[[:space:]]*"[^"]*"' "$TAURI_CONF" | sed 's/.*: *"\([^"]*\)".*/\1/' | tr '[:upper:]' '[:lower:]')
+fi
+APP_NAME_LOWER="${APP_NAME_LOWER:-archdeck}"
 
 # Check if running as root
 if [ "$EUID" -ne 0 ]; then
@@ -17,8 +25,8 @@ fi
 # Check if rules file exists in script directory
 if [ -f "$SCRIPT_DIR/$RULES_FILE" ]; then
     SOURCE="$SCRIPT_DIR/$RULES_FILE"
-elif [ -f "/usr/share/archdeck/$RULES_FILE" ]; then
-    SOURCE="/usr/share/archdeck/$RULES_FILE"
+elif [ -f "/usr/share/$APP_NAME_LOWER/$RULES_FILE" ]; then
+    SOURCE="/usr/share/$APP_NAME_LOWER/$RULES_FILE"
 else
     # Inline the rules if file not found
     echo "Creating udev rules inline..."

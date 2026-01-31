@@ -21,9 +21,9 @@ fn default_version() -> u32 {
     1
 }
 
-/// Returns the path to the config file: ~/.config/archdeck/bindings.toml
+/// Returns the path to the config file: ~/.config/{app_name}/bindings.toml
 pub fn config_path() -> Option<PathBuf> {
-    dirs::config_dir().map(|p| p.join("archdeck").join("bindings.toml"))
+    dirs::config_dir().map(|p| p.join(crate::app_constants::APP_NAME_LOWER).join("bindings.toml"))
 }
 
 /// Save bindings to the config file.

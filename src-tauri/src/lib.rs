@@ -1,5 +1,5 @@
 use std::sync::{Arc, Mutex};
-use tauri::Builder;
+use tauri::{Builder, Manager, RunEvent, WindowEvent};
 
 mod binding;
 mod button_renderer;
@@ -16,9 +16,20 @@ mod key_light_controller;
 mod state_manager;
 mod streamdeck;
 
+// Include generated constants from build.rs
+pub mod app_constants {
+    include!(concat!(env!("OUT_DIR"), "/app_constants.rs"));
+}
+
 use commands::AppState;
 
+/// Run the application with optional hidden mode
 pub fn run() {
+    run_with_options(false);
+}
+
+/// Run the application, optionally starting hidden (no window shown)
+pub fn run_with_options(start_hidden: bool) {
     // Shared state for device info and bindings
     let device_info = Arc::new(Mutex::new(None));
     let bindings = Arc::new(Mutex::new(
@@ -36,7 +47,7 @@ pub fn run() {
     // Clone for the state poller thread
     let system_state_poller = Arc::clone(&system_state);
 
-    Builder::default()
+    let app = Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .manage(AppState {
@@ -62,6 +73,13 @@ pub fn run() {
             let handle = app.handle().clone();
             let state_handle = app.handle().clone();
 
+            // Hide window if starting in hidden mode
+            if start_hidden {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.hide();
+                }
+            }
+
             // Start Stream Deck thread
             std::thread::spawn(move || {
                 if let Err(e) = crate::streamdeck::run(
@@ -82,6 +100,25 @@ pub fn run() {
 
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+
+    // Run the app with custom event handling to prevent exit on window close
+    app.run(|app_handle, event| {
+        match event {
+            RunEvent::WindowEvent { label, event: WindowEvent::CloseRequested { api, .. }, .. } => {
+                // Prevent the window from closing - just hide it instead
+                api.prevent_close();
+                if let Some(window) = app_handle.get_webview_window(&label) {
+                    let _ = window.hide();
+                }
+                eprintln!("Window hidden - {} continues running in background", app_constants::APP_NAME);
+            }
+            RunEvent::ExitRequested { api, .. } => {
+                // Prevent automatic exit - keep running in background
+                api.prevent_exit();
+            }
+            _ => {}
+        }
+    });
 }

@@ -38,7 +38,10 @@
     ],
     "resources": [
       "scripts/70-streamdeck.rules",
-      "scripts/setup-udev.sh"
+      "scripts/setup-udev.sh",
+      "scripts/archdeck.service.template",
+      "scripts/install-autostart.sh",
+      "scripts/uninstall-autostart.sh"
     ],
     "linux": {
       "appimage": {

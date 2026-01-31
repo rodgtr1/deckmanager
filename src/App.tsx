@@ -17,6 +17,7 @@ import {
   ConnectionStatusEvent,
   PageChangeEvent,
   inputsMatch,
+  createDefaultCapability,
 } from "./types";
 import "./App.css";
 
@@ -254,61 +255,10 @@ export default function App() {
     if (selectedInput) {
       const capInfo = capabilities.find(c => c.id === capabilityId);
       if (capInfo) {
-        // Create default capability object based on type
-        let capability: Capability;
-        switch (capabilityId) {
-          case "SystemAudio":
-            capability = { type: "SystemAudio", step: 0.02 };
-            break;
-          case "Mute":
-            capability = { type: "Mute" };
-            break;
-          case "VolumeUp":
-            capability = { type: "VolumeUp", step: 0.05 };
-            break;
-          case "VolumeDown":
-            capability = { type: "VolumeDown", step: 0.05 };
-            break;
-          case "Microphone":
-            capability = { type: "Microphone", step: 0.02 };
-            break;
-          case "MicMute":
-            capability = { type: "MicMute" };
-            break;
-          case "MicVolumeUp":
-            capability = { type: "MicVolumeUp", step: 0.05 };
-            break;
-          case "MicVolumeDown":
-            capability = { type: "MicVolumeDown", step: 0.05 };
-            break;
-          case "MediaPlayPause":
-            capability = { type: "MediaPlayPause" };
-            break;
-          case "MediaNext":
-            capability = { type: "MediaNext" };
-            break;
-          case "MediaPrevious":
-            capability = { type: "MediaPrevious" };
-            break;
-          case "MediaStop":
-            capability = { type: "MediaStop" };
-            break;
-          case "RunCommand":
-            capability = { type: "RunCommand", command: "", toggle: false };
-            break;
-          case "LaunchApp":
-            capability = { type: "LaunchApp", command: "" };
-            break;
-          case "OpenURL":
-            capability = { type: "OpenURL", url: "https://" };
-            break;
-          case "ElgatoKeyLight":
-            capability = { type: "ElgatoKeyLight", ip: "192.168.1.100", port: 9123, action: "Toggle" };
-            break;
-          default:
-            return;
+        const capability = createDefaultCapability(capabilityId);
+        if (capability) {
+          handleSetBinding(selectedInput, capability);
         }
-        handleSetBinding(selectedInput, capability);
       }
     }
   }, [selectedInput, capabilities, handleSetBinding]);
@@ -327,59 +277,8 @@ export default function App() {
     if (!isSupported) return;
 
     // Create default capability object
-    let capability: Capability;
-    switch (capabilityId) {
-      case "SystemAudio":
-        capability = { type: "SystemAudio", step: 0.02 };
-        break;
-      case "Mute":
-        capability = { type: "Mute" };
-        break;
-      case "VolumeUp":
-        capability = { type: "VolumeUp", step: 0.05 };
-        break;
-      case "VolumeDown":
-        capability = { type: "VolumeDown", step: 0.05 };
-        break;
-      case "Microphone":
-        capability = { type: "Microphone", step: 0.02 };
-        break;
-      case "MicMute":
-        capability = { type: "MicMute" };
-        break;
-      case "MicVolumeUp":
-        capability = { type: "MicVolumeUp", step: 0.05 };
-        break;
-      case "MicVolumeDown":
-        capability = { type: "MicVolumeDown", step: 0.05 };
-        break;
-      case "MediaPlayPause":
-        capability = { type: "MediaPlayPause" };
-        break;
-      case "MediaNext":
-        capability = { type: "MediaNext" };
-        break;
-      case "MediaPrevious":
-        capability = { type: "MediaPrevious" };
-        break;
-      case "MediaStop":
-        capability = { type: "MediaStop" };
-        break;
-      case "RunCommand":
-        capability = { type: "RunCommand", command: "" };
-        break;
-      case "LaunchApp":
-        capability = { type: "LaunchApp", command: "" };
-        break;
-      case "OpenURL":
-        capability = { type: "OpenURL", url: "https://" };
-        break;
-      case "ElgatoKeyLight":
-        capability = { type: "ElgatoKeyLight", ip: "192.168.1.100", port: 9123, action: "Toggle" };
-        break;
-      default:
-        return;
-    }
+    const capability = createDefaultCapability(capabilityId);
+    if (!capability) return;
 
     handleSetBinding(input, capability);
     setSelectedInput(input);

@@ -93,13 +93,13 @@ describe("getInputDisplayName", () => {
 });
 
 describe("getCapabilityDisplayName", () => {
-  it("returns correct name for SystemVolume", () => {
-    const cap: Capability = { type: "SystemVolume", step: 0.02 };
-    expect(getCapabilityDisplayName(cap)).toBe("Volume");
+  it("returns correct name for SystemAudio", () => {
+    const cap: Capability = { type: "SystemAudio", step: 0.02 };
+    expect(getCapabilityDisplayName(cap)).toBe("Audio");
   });
 
-  it("returns correct name for ToggleMute", () => {
-    const cap: Capability = { type: "ToggleMute" };
+  it("returns correct name for Mute", () => {
+    const cap: Capability = { type: "Mute" };
     expect(getCapabilityDisplayName(cap)).toBe("Mute");
   });
 
