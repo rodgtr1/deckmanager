@@ -2,6 +2,7 @@ use std::sync::{Arc, Mutex};
 use tauri::Builder;
 
 mod binding;
+mod button_renderer;
 mod capability;
 mod commands;
 mod config;
@@ -25,6 +26,8 @@ pub fn run() {
     let bindings_clone = Arc::clone(&bindings);
 
     Builder::default()
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
         .manage(AppState {
             device_info: Arc::clone(&device_info),
             bindings: Arc::clone(&bindings),
@@ -36,6 +39,7 @@ pub fn run() {
             commands::set_binding,
             commands::remove_binding,
             commands::save_bindings,
+            commands::sync_button_images,
         ])
         .setup(move |app| {
             let handle = app.handle().clone();

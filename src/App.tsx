@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
+import CapabilityBrowser from "./components/CapabilityBrowser";
 import DeviceLayout from "./components/DeviceLayout";
 import BindingEditor from "./components/BindingEditor";
 import {
@@ -20,10 +21,9 @@ export default function App() {
   const [bindings, setBindings] = useState<Binding[]>([]);
   const [capabilities, setCapabilities] = useState<CapabilityInfo[]>([]);
   const [selectedInput, setSelectedInput] = useState<InputRef | null>(null);
+  const [selectedCapabilityId, setSelectedCapabilityId] = useState<string | null>(null);
   const [activeInputs, setActiveInputs] = useState<Set<string>>(new Set());
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
 
   // Load initial data
   useEffect(() => {
@@ -113,13 +113,31 @@ export default function App() {
 
   // Handle setting a binding
   const handleSetBinding = useCallback(
-    async (input: InputRef, capability: Capability) => {
+    async (
+      input: InputRef,
+      capability: Capability,
+      icon?: string,
+      label?: string,
+      buttonImage?: string,
+      showLabel?: boolean
+    ) => {
       try {
-        await invoke("set_binding", { input, capability });
+        const params = {
+          input,
+          capability,
+          icon: icon ?? null,
+          label: label ?? null,
+          button_image: buttonImage ?? null,
+          show_label: showLabel ?? null,
+        };
+        console.log("handleSetBinding params:", params);
+        await invoke("set_binding", { params });
         // Refresh bindings
         const updated = await invoke<Binding[]>("get_bindings");
+        console.log("Updated bindings:", updated);
         setBindings(updated);
-        setHasUnsavedChanges(true);
+        // Auto-save to disk
+        await invoke("save_bindings");
         setError(null);
       } catch (e) {
         setError(`Failed to set binding: ${e}`);
@@ -135,26 +153,109 @@ export default function App() {
       // Refresh bindings
       const updated = await invoke<Binding[]>("get_bindings");
       setBindings(updated);
-      setHasUnsavedChanges(true);
+      // Auto-save to disk
+      await invoke("save_bindings");
       setError(null);
     } catch (e) {
       setError(`Failed to remove binding: ${e}`);
     }
   }, []);
 
-  // Handle saving bindings to disk
-  const handleSave = useCallback(async () => {
-    setSaving(true);
-    try {
-      await invoke("save_bindings");
-      setHasUnsavedChanges(false);
-      setError(null);
-    } catch (e) {
-      setError(`Failed to save: ${e}`);
-    } finally {
-      setSaving(false);
+  // Handle capability selection from browser (for click-to-assign flow)
+  const handleCapabilitySelect = useCallback((capabilityId: string) => {
+    setSelectedCapabilityId(capabilityId);
+    // If an input is already selected, assign the capability
+    if (selectedInput) {
+      const capInfo = capabilities.find(c => c.id === capabilityId);
+      if (capInfo) {
+        // Create default capability object based on type
+        let capability: Capability;
+        switch (capabilityId) {
+          case "SystemVolume":
+            capability = { type: "SystemVolume", step: 0.02 };
+            break;
+          case "ToggleMute":
+            capability = { type: "ToggleMute" };
+            break;
+          case "MediaPlayPause":
+            capability = { type: "MediaPlayPause" };
+            break;
+          case "MediaNext":
+            capability = { type: "MediaNext" };
+            break;
+          case "MediaPrevious":
+            capability = { type: "MediaPrevious" };
+            break;
+          case "MediaStop":
+            capability = { type: "MediaStop" };
+            break;
+          case "RunCommand":
+            capability = { type: "RunCommand", command: "" };
+            break;
+          case "LaunchApp":
+            capability = { type: "LaunchApp", command: "" };
+            break;
+          case "OpenURL":
+            capability = { type: "OpenURL", url: "https://" };
+            break;
+          default:
+            return;
+        }
+        handleSetBinding(selectedInput, capability);
+      }
     }
-  }, []);
+  }, [selectedInput, capabilities, handleSetBinding]);
+
+  // Handle drop from capability browser onto device layout
+  const handleDrop = useCallback((input: InputRef, capabilityId: string) => {
+    const capInfo = capabilities.find(c => c.id === capabilityId);
+    if (!capInfo) return;
+
+    // Check if this capability is supported for this input type
+    const isSupported = (
+      (input.type === "Button" && capInfo.supports_button) ||
+      (input.type === "Encoder" && capInfo.supports_encoder) ||
+      (input.type === "EncoderPress" && capInfo.supports_encoder_press)
+    );
+    if (!isSupported) return;
+
+    // Create default capability object
+    let capability: Capability;
+    switch (capabilityId) {
+      case "SystemVolume":
+        capability = { type: "SystemVolume", step: 0.02 };
+        break;
+      case "ToggleMute":
+        capability = { type: "ToggleMute" };
+        break;
+      case "MediaPlayPause":
+        capability = { type: "MediaPlayPause" };
+        break;
+      case "MediaNext":
+        capability = { type: "MediaNext" };
+        break;
+      case "MediaPrevious":
+        capability = { type: "MediaPrevious" };
+        break;
+      case "MediaStop":
+        capability = { type: "MediaStop" };
+        break;
+      case "RunCommand":
+        capability = { type: "RunCommand", command: "" };
+        break;
+      case "LaunchApp":
+        capability = { type: "LaunchApp", command: "" };
+        break;
+      case "OpenURL":
+        capability = { type: "OpenURL", url: "https://" };
+        break;
+      default:
+        return;
+    }
+
+    handleSetBinding(input, capability);
+    setSelectedInput(input);
+  }, [capabilities, handleSetBinding]);
 
   if (error && !device) {
     return (
@@ -179,29 +280,24 @@ export default function App() {
     <div className="app">
       <header className="app-header">
         <h1>ArchDeck</h1>
-        <div className="header-actions">
-          {hasUnsavedChanges && (
-            <span className="unsaved-indicator">Unsaved changes</span>
-          )}
-          <button
-            className="btn-save-config"
-            onClick={handleSave}
-            disabled={!hasUnsavedChanges || saving}
-          >
-            {saving ? "Saving..." : "Save Configuration"}
-          </button>
-        </div>
       </header>
 
       {error && <div className="error-banner">{error}</div>}
 
-      <main className="app-main">
+      <main className="app-main three-column">
+        <CapabilityBrowser
+          capabilities={capabilities}
+          onSelect={handleCapabilitySelect}
+          selectedCapabilityId={selectedCapabilityId}
+        />
+
         <DeviceLayout
           device={device}
           bindings={bindings}
           selectedInput={selectedInput}
           activeInputs={activeInputs}
           onSelectInput={setSelectedInput}
+          onDrop={handleDrop}
         />
 
         <BindingEditor

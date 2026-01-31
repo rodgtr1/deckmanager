@@ -20,8 +20,10 @@ index = 0
 [bindings.capability]
 type = "ToggleMute"
 
-# Encoder 1 press toggles play/pause
+# Encoder 1 press toggles play/pause (with custom icon and label)
 [[bindings]]
+icon = "\u25B6\uFE0F"
+label = "Play"
 [bindings.input]
 type = "EncoderPress"
 index = 1

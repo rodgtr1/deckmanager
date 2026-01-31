@@ -1,4 +1,6 @@
 import { useState, useEffect } from "react";
+import { open } from "@tauri-apps/plugin-dialog";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import {
   InputRef,
   Capability,
@@ -7,12 +9,28 @@ import {
   inputsMatch,
   getInputDisplayName,
 } from "../types";
+import { getCapabilityIcon } from "./CapabilityBrowser";
+
+// Icon picker options
+const ICONS = [
+  "\u{1F50A}", "\u{1F507}", "\u25B6\uFE0F", "\u23F8", "\u23ED", "\u23EE", "\u23F9",
+  "\u{1F310}", "\u{1F4C1}", "\u2699\uFE0F", "\u{1F3AE}", "\u{1F4A1}", "\u{1F5A5}\uFE0F",
+  "\u{1F3A4}", "\u{1F4F7}", "\u{1F4F9}", "\u{1F4DD}", "\u{1F512}", "\u{1F513}",
+  "\u2B50", "\u2764\uFE0F", "\u{1F525}", "\u26A1", "\u2601\uFE0F", "\u{1F319}",
+];
 
 interface BindingEditorProps {
   selectedInput: InputRef | null;
   bindings: Binding[];
   capabilities: CapabilityInfo[];
-  onSetBinding: (input: InputRef, capability: Capability) => void;
+  onSetBinding: (
+    input: InputRef,
+    capability: Capability,
+    icon?: string,
+    label?: string,
+    buttonImage?: string,
+    showLabel?: boolean
+  ) => void;
   onRemoveBinding: (input: InputRef) => void;
 }
 
@@ -27,11 +45,24 @@ export default function BindingEditor({
   const [step, setStep] = useState<number>(0.02);
   const [command, setCommand] = useState<string>("");
   const [url, setUrl] = useState<string>("https://");
+  const [customIcon, setCustomIcon] = useState<string>("");
+  const [customLabel, setCustomLabel] = useState<string>("");
+  const [buttonImage, setButtonImage] = useState<string>("");
+  const [showLabel, setShowLabel] = useState<boolean>(false);
 
   // Get current binding for selected input
   const currentBinding = selectedInput
     ? bindings.find((b) => inputsMatch(b.input, selectedInput))
     : undefined;
+
+  // Check if this input type supports hardware images
+  // Buttons: direct button display
+  // EncoderPress: LCD strip display
+  // Encoder: LCD strip fallback display
+  const supportsHardwareImage =
+    selectedInput?.type === "Button" ||
+    selectedInput?.type === "EncoderPress" ||
+    selectedInput?.type === "Encoder";
 
   // Filter capabilities based on input type
   const availableCapabilities = selectedInput
@@ -53,6 +84,10 @@ export default function BindingEditor({
   useEffect(() => {
     if (currentBinding) {
       setSelectedCapabilityId(currentBinding.capability.type);
+      setCustomIcon(currentBinding.icon || "");
+      setCustomLabel(currentBinding.label || "");
+      setButtonImage(currentBinding.button_image || "");
+      setShowLabel(currentBinding.show_label || false);
       if (currentBinding.capability.type === "SystemVolume") {
         setStep(currentBinding.capability.step);
       }
@@ -70,8 +105,26 @@ export default function BindingEditor({
       setStep(0.02);
       setCommand("");
       setUrl("https://");
+      setCustomIcon("");
+      setCustomLabel("");
+      setButtonImage("");
+      setShowLabel(false);
     }
   }, [currentBinding, selectedInput]);
+
+  const handleFilePicker = async () => {
+    try {
+      const file = await open({
+        multiple: false,
+        filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "gif", "webp"] }],
+      });
+      if (file) {
+        setButtonImage(file);
+      }
+    } catch (e) {
+      console.error("Failed to open file picker:", e);
+    }
+  };
 
   const handleSave = () => {
     if (!selectedInput || !selectedCapabilityId) return;
@@ -112,13 +165,40 @@ export default function BindingEditor({
         return;
     }
 
-    onSetBinding(selectedInput, capability);
+    // Pass icon/label only if customized
+    const icon = customIcon || undefined;
+    const label = customLabel || undefined;
+    // For button image and show label, pass the actual values (not using || which breaks false)
+    const image = buttonImage.trim() || undefined;
+    const showLabelOnButton = showLabel;
+
+    console.log("handleSave:", { icon, label, image, showLabelOnButton, customLabel });
+    onSetBinding(selectedInput, capability, icon, label, image, showLabelOnButton);
   };
 
   const handleRemove = () => {
     if (!selectedInput) return;
     onRemoveBinding(selectedInput);
     setSelectedCapabilityId("");
+    setCustomIcon("");
+    setCustomLabel("");
+    setButtonImage("");
+    setShowLabel(false);
+  };
+
+  // Get default icon for current capability
+  const getDefaultIcon = (): string => {
+    return selectedCapabilityId ? getCapabilityIcon(selectedCapabilityId) : "";
+  };
+
+  // Get preview URL for button image
+  const getPreviewUrl = (): string | null => {
+    if (!buttonImage) return null;
+    if (buttonImage.startsWith("http://") || buttonImage.startsWith("https://")) {
+      return buttonImage;
+    }
+    // Convert local file path to Tauri asset URL
+    return convertFileSrc(buttonImage);
   };
 
   if (!selectedInput) {
@@ -134,6 +214,8 @@ export default function BindingEditor({
   const selectedCapability = capabilities.find(
     (c) => c.id === selectedCapabilityId
   );
+
+  const previewUrl = getPreviewUrl();
 
   return (
     <div className="binding-editor">
@@ -216,6 +298,98 @@ export default function BindingEditor({
           />
           <p className="field-description">URL to open in your browser</p>
         </div>
+      )}
+
+      {selectedCapabilityId && (
+        <>
+          <div className="editor-field">
+            <label>Icon</label>
+            <div className="icon-picker">
+              <button
+                type="button"
+                className={`icon-option ${customIcon === "" ? "selected" : ""}`}
+                onClick={() => setCustomIcon("")}
+                title="Use default icon"
+              >
+                {getDefaultIcon()}
+              </button>
+              {ICONS.map((icon) => (
+                <button
+                  key={icon}
+                  type="button"
+                  className={`icon-option ${customIcon === icon ? "selected" : ""}`}
+                  onClick={() => setCustomIcon(icon)}
+                >
+                  {icon}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="editor-field">
+            <label htmlFor="label-input">Custom Label</label>
+            <input
+              id="label-input"
+              type="text"
+              value={customLabel}
+              onChange={(e) => setCustomLabel(e.target.value)}
+              placeholder="Optional custom text"
+            />
+            <p className="field-description">
+              Leave empty to use default name
+            </p>
+          </div>
+
+          {/* Hardware Image - for buttons and encoders */}
+          {supportsHardwareImage && (
+            <>
+              <div className="editor-field">
+                <label htmlFor="button-image-input">Button Image (Hardware)</label>
+                <div className="image-source">
+                  <input
+                    id="button-image-input"
+                    type="text"
+                    value={buttonImage}
+                    onChange={(e) => setButtonImage(e.target.value)}
+                    placeholder="File path or URL"
+                  />
+                  <button
+                    type="button"
+                    className="btn-browse"
+                    onClick={handleFilePicker}
+                  >
+                    Browse
+                  </button>
+                </div>
+                {previewUrl && (
+                  <div className="image-preview-container">
+                    <img src={previewUrl} alt="Button preview" className="image-preview" />
+                  </div>
+                )}
+                <p className="field-description">
+                  {selectedInput?.type === "Button"
+                    ? "PNG/JPEG file or URL for the hardware button display"
+                    : "PNG/JPEG file or URL for the LCD strip display"}
+                </p>
+              </div>
+
+              <div className="editor-field checkbox-field">
+                <label className="checkbox-label" htmlFor="show-label-checkbox">
+                  <input
+                    id="show-label-checkbox"
+                    type="checkbox"
+                    checked={showLabel}
+                    onChange={(e) => setShowLabel(e.target.checked)}
+                  />
+                  Show label on hardware button
+                </label>
+                <p className="field-description">
+                  Renders the label text on the hardware display
+                </p>
+              </div>
+            </>
+          )}
+        </>
       )}
 
       <div className="editor-actions">

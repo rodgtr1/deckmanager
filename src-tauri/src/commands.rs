@@ -2,6 +2,7 @@ use crate::binding::{Binding, InputRef};
 use crate::capability::Capability;
 use crate::config;
 use crate::device::DeviceInfo;
+use crate::streamdeck;
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 use tauri::State;
@@ -154,20 +155,48 @@ pub fn get_capabilities() -> Vec<CapabilityInfo> {
     ]
 }
 
+/// Parameters for set_binding command - using a struct ensures proper deserialization
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct SetBindingParams {
+    pub input: InputRef,
+    pub capability: Capability,
+    #[serde(default)]
+    pub icon: Option<String>,
+    #[serde(default)]
+    pub label: Option<String>,
+    #[serde(default)]
+    pub button_image: Option<String>,
+    #[serde(default)]
+    pub show_label: Option<bool>,
+}
+
 /// Add or update a binding.
 #[tauri::command]
-pub fn set_binding(
-    state: State<AppState>,
-    input: InputRef,
-    capability: Capability,
-) -> Result<(), String> {
+pub fn set_binding(state: State<AppState>, params: SetBindingParams) -> Result<(), String> {
+    #[cfg(debug_assertions)]
+    eprintln!(
+        "set_binding called: button_image={:?}, show_label={:?}",
+        params.button_image, params.show_label
+    );
+
     let mut bindings = state.bindings.lock().map_err(|e| e.to_string())?;
 
     // Remove existing binding for this input if present
-    bindings.retain(|b| !inputs_match(&b.input, &input));
+    bindings.retain(|b| !inputs_match(&b.input, &params.input));
 
     // Add new binding
-    bindings.push(Binding { input, capability });
+    bindings.push(Binding {
+        input: params.input,
+        capability: params.capability,
+        icon: params.icon,
+        label: params.label,
+        button_image: params.button_image,
+        show_label: params.show_label,
+    });
+
+    // Request button image sync to hardware
+    streamdeck::request_image_sync();
 
     Ok(())
 }
@@ -177,7 +206,17 @@ pub fn set_binding(
 pub fn remove_binding(state: State<AppState>, input: InputRef) -> Result<(), String> {
     let mut bindings = state.bindings.lock().map_err(|e| e.to_string())?;
     bindings.retain(|b| !inputs_match(&b.input, &input));
+
+    // Request button image sync to clear the removed button
+    streamdeck::request_image_sync();
+
     Ok(())
+}
+
+/// Sync button images to hardware.
+#[tauri::command]
+pub fn sync_button_images() {
+    streamdeck::request_image_sync();
 }
 
 /// Save bindings to config file.

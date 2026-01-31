@@ -31,6 +31,10 @@ export type Capability =
 export interface Binding {
   input: InputRef;
   capability: Capability;
+  icon?: string;         // Custom emoji or icon name (UI only)
+  label?: string;        // Custom display text (UI only)
+  button_image?: string; // File path or URL for hardware button
+  show_label?: boolean;  // Render label on hardware button
 }
 
 // Capability metadata for UI

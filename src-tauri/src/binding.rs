@@ -19,6 +19,18 @@ pub enum InputRef {
 pub struct Binding {
     pub input: InputRef,
     pub capability: Capability,
+    /// Custom emoji or icon name for this binding (UI only)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
+    /// Custom display text for this binding (UI only)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    /// File path or URL for hardware button image
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub button_image: Option<String>,
+    /// Whether to render label on hardware button
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub show_label: Option<bool>,
 }
 
 impl Binding {

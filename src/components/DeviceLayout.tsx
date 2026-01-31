@@ -1,3 +1,5 @@
+import { useState, DragEvent } from "react";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import {
   DeviceInfo,
   InputRef,
@@ -8,6 +10,17 @@ import {
   encoderRef,
   encoderPressRef,
 } from "../types";
+import { getCapabilityIcon } from "./CapabilityBrowser";
+
+// Get preview URL for button image (handles both URLs and local paths)
+function getImageUrl(imagePath: string): string {
+  if (imagePath.startsWith("http://") || imagePath.startsWith("https://")) {
+    return imagePath;
+  }
+  const assetUrl = convertFileSrc(imagePath);
+  console.log("getImageUrl:", { imagePath, assetUrl });
+  return assetUrl;
+}
 
 interface DeviceLayoutProps {
   device: DeviceInfo;
@@ -15,6 +28,7 @@ interface DeviceLayoutProps {
   selectedInput: InputRef | null;
   activeInputs: Set<string>;
   onSelectInput: (input: InputRef) => void;
+  onDrop?: (input: InputRef, capabilityId: string) => void;
 }
 
 // Serialize InputRef for Set membership
@@ -29,7 +43,11 @@ export default function DeviceLayout({
   selectedInput,
   activeInputs,
   onSelectInput,
+  onDrop,
 }: DeviceLayoutProps) {
+  // Track which input is being dragged over
+  const [dragOverInput, setDragOverInput] = useState<string | null>(null);
+
   // Find binding for a given input
   const getBinding = (input: InputRef): Binding | undefined => {
     return bindings.find((b) => inputsMatch(b.input, input));
@@ -45,26 +63,83 @@ export default function DeviceLayout({
     return activeInputs.has(inputKey(input));
   };
 
+  // Check if an input is being dragged over
+  const isDragOver = (input: InputRef): boolean => {
+    return dragOverInput === inputKey(input);
+  };
+
+  // Handle drag over event
+  const handleDragOver = (e: DragEvent, input: InputRef) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+    setDragOverInput(inputKey(input));
+  };
+
+  // Handle drag leave event
+  const handleDragLeave = () => {
+    setDragOverInput(null);
+  };
+
+  // Handle drop event
+  const handleDrop = (e: DragEvent, input: InputRef) => {
+    e.preventDefault();
+    setDragOverInput(null);
+    const capabilityId = e.dataTransfer.getData("text/plain");
+    if (capabilityId && onDrop) {
+      onDrop(input, capabilityId);
+    }
+  };
+
+  // Get display content for a binding (icon + label or default)
+  const getBindingDisplay = (binding: Binding | undefined): { icon: string; label: string } | null => {
+    if (!binding) return null;
+    const icon = binding.icon || getCapabilityIcon(binding.capability.type);
+    const label = binding.label || getCapabilityDisplayName(binding.capability);
+    return { icon, label };
+  };
+
   // Render button grid
   const renderButtons = () => {
     const buttons = [];
     for (let i = 0; i < device.button_count; i++) {
       const input = buttonRef(i);
       const binding = getBinding(input);
+      const display = getBindingDisplay(binding);
       const selected = isSelected(input);
       const active = isActive(input);
+      const dragOver = isDragOver(input);
+      const hasButtonImage = binding?.button_image;
 
       buttons.push(
         <button
           key={`btn-${i}`}
-          className={`deck-button ${selected ? "selected" : ""} ${active ? "active" : ""}`}
+          className={`deck-button ${selected ? "selected" : ""} ${active ? "active" : ""} ${dragOver ? "drag-over" : ""} ${hasButtonImage ? "has-image" : ""}`}
           onClick={() => onSelectInput(input)}
+          onDragOver={(e) => handleDragOver(e, input)}
+          onDragLeave={handleDragLeave}
+          onDrop={(e) => handleDrop(e, input)}
         >
           <span className="button-index">{i + 1}</span>
-          {binding && (
-            <span className="button-label">
-              {getCapabilityDisplayName(binding.capability)}
-            </span>
+          {hasButtonImage ? (
+            <>
+              <img
+                src={getImageUrl(binding.button_image!)}
+                alt=""
+                className="button-image"
+                onError={(e) => {
+                  console.error("Failed to load button image:", binding.button_image);
+                  (e.target as HTMLImageElement).style.display = 'none';
+                }}
+              />
+              {display && <span className="button-label">{display.label}</span>}
+            </>
+          ) : (
+            display && (
+              <>
+                <span className="button-icon">{display.icon}</span>
+                <span className="button-label">{display.label}</span>
+              </>
+            )
           )}
         </button>
       );
@@ -80,38 +155,72 @@ export default function DeviceLayout({
       const pressInput = encoderPressRef(i);
       const rotateBinding = getBinding(rotateInput);
       const pressBinding = getBinding(pressInput);
+      const rotateDisplay = getBindingDisplay(rotateBinding);
+      const pressDisplay = getBindingDisplay(pressBinding);
       const rotateSelected = isSelected(rotateInput);
       const pressSelected = isSelected(pressInput);
       const rotateActive = isActive(rotateInput);
       const pressActive = isActive(pressInput);
+      const rotateDragOver = isDragOver(rotateInput);
+      const pressDragOver = isDragOver(pressInput);
+
+      // Determine which image to show (priority: pressBinding > rotateBinding)
+      const encoderImage = pressBinding?.button_image || rotateBinding?.button_image;
+      const hasEncoderImage = !!encoderImage;
 
       encoders.push(
         <div key={`enc-${i}`} className="encoder-group">
           <button
-            className={`encoder-ring ${rotateSelected ? "selected" : ""} ${rotateActive ? "active" : ""}`}
+            className={`encoder-ring ${rotateSelected ? "selected" : ""} ${rotateActive ? "active" : ""} ${rotateDragOver ? "drag-over" : ""}`}
             onClick={() => onSelectInput(rotateInput)}
+            onDragOver={(e) => handleDragOver(e, rotateInput)}
+            onDragLeave={handleDragLeave}
+            onDrop={(e) => handleDrop(e, rotateInput)}
             title="Encoder rotation"
           >
             <div
-              className={`encoder-center ${pressSelected ? "selected" : ""} ${pressActive ? "active" : ""}`}
+              className={`encoder-center ${pressSelected ? "selected" : ""} ${pressActive ? "active" : ""} ${pressDragOver ? "drag-over" : ""} ${hasEncoderImage ? "has-image" : ""}`}
               onClick={(e) => {
                 e.stopPropagation();
                 onSelectInput(pressInput);
               }}
+              onDragOver={(e) => {
+                e.stopPropagation();
+                handleDragOver(e, pressInput);
+              }}
+              onDragLeave={(e) => {
+                e.stopPropagation();
+                handleDragLeave();
+              }}
+              onDrop={(e) => {
+                e.stopPropagation();
+                handleDrop(e, pressInput);
+              }}
               title="Encoder press"
             >
-              {pressBinding && (
-                <span className="encoder-label">
-                  {getCapabilityDisplayName(pressBinding.capability)}
-                </span>
+              {hasEncoderImage && encoderImage ? (
+                <img
+                  src={getImageUrl(encoderImage)}
+                  alt=""
+                  className="encoder-image"
+                  onError={(e) => {
+                    console.error("Failed to load encoder image:", encoderImage);
+                    // Hide broken image
+                    (e.target as HTMLImageElement).style.display = 'none';
+                  }}
+                />
+              ) : (
+                pressDisplay && (
+                  <span className="encoder-label">{pressDisplay.icon}</span>
+                )
               )}
             </div>
           </button>
           <div className="encoder-info">
             <span className="encoder-index">E{i + 1}</span>
-            {rotateBinding && (
+            {rotateDisplay && (
               <span className="encoder-rotate-label">
-                {getCapabilityDisplayName(rotateBinding.capability)}
+                {rotateDisplay.icon} {rotateDisplay.label}
               </span>
             )}
           </div>
@@ -127,14 +236,19 @@ export default function DeviceLayout({
     const selected = isSelected(swipeInput);
     const active = isActive(swipeInput);
     const binding = getBinding(swipeInput);
+    const display = getBindingDisplay(binding);
+    const dragOver = isDragOver(swipeInput);
 
     return (
       <div
-        className={`touch-strip ${selected ? "selected" : ""} ${active ? "active" : ""}`}
+        className={`touch-strip ${selected ? "selected" : ""} ${active ? "active" : ""} ${dragOver ? "drag-over" : ""}`}
         onClick={() => onSelectInput(swipeInput)}
+        onDragOver={(e) => handleDragOver(e, swipeInput)}
+        onDragLeave={handleDragLeave}
+        onDrop={(e) => handleDrop(e, swipeInput)}
       >
         <span className="touch-strip-label">
-          {binding ? getCapabilityDisplayName(binding.capability) : "Touch Strip"}
+          {display ? `${display.icon} ${display.label}` : "Touch Strip"}
         </span>
       </div>
     );

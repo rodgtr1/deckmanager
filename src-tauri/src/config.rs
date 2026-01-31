@@ -66,18 +66,34 @@ pub fn default_bindings() -> Vec<Binding> {
         Binding {
             input: InputRef::Encoder { index: 0 },
             capability: Capability::SystemVolume { step: 0.02 },
+            icon: None,
+            label: None,
+            button_image: None,
+            show_label: None,
         },
         Binding {
             input: InputRef::EncoderPress { index: 0 },
             capability: Capability::ToggleMute,
+            icon: None,
+            label: None,
+            button_image: None,
+            show_label: None,
         },
         Binding {
             input: InputRef::EncoderPress { index: 1 },
             capability: Capability::MediaPlayPause,
+            icon: None,
+            label: None,
+            button_image: None,
+            show_label: None,
         },
         Binding {
             input: InputRef::Button { index: 0 },
             capability: Capability::MediaPlayPause,
+            icon: None,
+            label: None,
+            button_image: None,
+            show_label: None,
         },
     ]
 }
