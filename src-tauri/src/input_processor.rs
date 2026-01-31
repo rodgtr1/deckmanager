@@ -1,5 +1,36 @@
 use crate::events::{ButtonEvent, EncoderEvent, TouchSwipeEvent};
 
+/// Direction of a swipe gesture on the touch strip.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SwipeDirection {
+    Left,
+    Right,
+}
+
+/// Minimum horizontal distance (in pixels) to consider a swipe intentional.
+const SWIPE_THRESHOLD: i32 = 50;
+
+/// Detect swipe direction from start and end coordinates.
+/// Returns None if the swipe was too short or primarily vertical.
+pub fn detect_swipe_direction(start: (u16, u16), end: (u16, u16)) -> Option<SwipeDirection> {
+    let dx = end.0 as i32 - start.0 as i32;
+    let dy = (end.1 as i32 - start.1 as i32).abs();
+
+    // Ignore if vertical movement is greater than horizontal (not a page swipe)
+    if dy > dx.abs() {
+        return None;
+    }
+
+    // Check if swipe exceeds threshold
+    if dx > SWIPE_THRESHOLD {
+        Some(SwipeDirection::Right)
+    } else if dx < -SWIPE_THRESHOLD {
+        Some(SwipeDirection::Left)
+    } else {
+        None
+    }
+}
+
 #[derive(Default)]
 pub struct InputProcessor {
     last_buttons: Vec<bool>,
@@ -187,5 +218,29 @@ mod tests {
             }
             _ => panic!("wrong event"),
         }
+    }
+
+    #[test]
+    fn swipe_right_detected() {
+        let direction = detect_swipe_direction((100, 50), (200, 50));
+        assert_eq!(direction, Some(SwipeDirection::Right));
+    }
+
+    #[test]
+    fn swipe_left_detected() {
+        let direction = detect_swipe_direction((200, 50), (100, 50));
+        assert_eq!(direction, Some(SwipeDirection::Left));
+    }
+
+    #[test]
+    fn short_swipe_ignored() {
+        let direction = detect_swipe_direction((100, 50), (130, 50));
+        assert_eq!(direction, None);
+    }
+
+    #[test]
+    fn vertical_swipe_ignored() {
+        let direction = detect_swipe_direction((100, 50), (200, 200));
+        assert_eq!(direction, None);
     }
 }

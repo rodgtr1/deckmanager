@@ -1,4 +1,5 @@
 use crate::binding::Binding;
+use crate::image_cache;
 use ab_glyph::{FontRef, PxScale};
 use anyhow::{Context, Result};
 use image::{DynamicImage, Rgba, RgbaImage};
@@ -26,12 +27,14 @@ impl ButtonRenderer {
         })
     }
 
-    /// Load an image from a local file path.
+    /// Load an image from a local file path (uncached).
+    #[allow(dead_code)]
     pub fn load_file(&self, path: &Path) -> Result<DynamicImage> {
         image::open(path).context(format!("Failed to load image: {}", path.display()))
     }
 
-    /// Fetch and load an image from a URL.
+    /// Fetch and load an image from a URL (uncached).
+    #[allow(dead_code)]
     pub fn load_url(&self, url: &str) -> Result<DynamicImage> {
         let response = reqwest::blocking::get(url).context("Failed to fetch image from URL")?;
 
@@ -40,13 +43,9 @@ impl ButtonRenderer {
         image::load_from_memory(&bytes).context("Failed to decode image from URL")
     }
 
-    /// Load an image from either a file path or URL.
+    /// Load an image from either a file path or URL (with caching).
     pub fn load_image(&self, source: &str) -> Result<DynamicImage> {
-        if source.starts_with("http://") || source.starts_with("https://") {
-            self.load_url(source)
-        } else {
-            self.load_file(Path::new(source))
-        }
+        image_cache::load_cached(source)
     }
 
     /// Resize an image to fit the button dimensions.
@@ -199,15 +198,9 @@ impl LcdRenderer {
         })
     }
 
-    /// Load an image from either a file path or URL.
+    /// Load an image from either a file path or URL (with caching).
     pub fn load_image(&self, source: &str) -> Result<DynamicImage> {
-        if source.starts_with("http://") || source.starts_with("https://") {
-            let response = reqwest::blocking::get(source).context("Failed to fetch image from URL")?;
-            let bytes = response.bytes().context("Failed to read image bytes")?;
-            image::load_from_memory(&bytes).context("Failed to decode image from URL")
-        } else {
-            image::open(Path::new(source)).context(format!("Failed to load image: {}", source))
-        }
+        image_cache::load_cached(source)
     }
 
     /// Resize an image to fit the LCD section dimensions.
@@ -300,5 +293,164 @@ mod tests {
                 || "https://example.com/img.png".starts_with("https://")
         );
         assert!(!"./local/image.png".starts_with("http"));
+    }
+
+    #[test]
+    fn test_button_renderer_creation() {
+        let renderer = ButtonRenderer::new(72, 72);
+        assert!(renderer.is_ok());
+        let renderer = renderer.unwrap();
+        assert_eq!(renderer.button_size, (72, 72));
+    }
+
+    #[test]
+    fn test_button_renderer_different_sizes() {
+        // Test Stream Deck Mini size (80x80)
+        let renderer = ButtonRenderer::new(80, 80).unwrap();
+        assert_eq!(renderer.button_size, (80, 80));
+
+        // Test Stream Deck XL size (96x96)
+        let renderer = ButtonRenderer::new(96, 96).unwrap();
+        assert_eq!(renderer.button_size, (96, 96));
+    }
+
+    #[test]
+    fn test_lcd_renderer_creation() {
+        let renderer = LcdRenderer::new(200, 100);
+        assert!(renderer.is_ok());
+        let renderer = renderer.unwrap();
+        assert_eq!(renderer.section_size, (200, 100));
+    }
+
+    #[test]
+    fn test_create_solid_button() {
+        let renderer = ButtonRenderer::new(72, 72).unwrap();
+        let img = renderer.create_solid_button(Rgba([255, 0, 0, 255]), None);
+
+        assert_eq!(img.width(), 72);
+        assert_eq!(img.height(), 72);
+    }
+
+    #[test]
+    fn test_create_solid_button_with_label() {
+        let renderer = ButtonRenderer::new(72, 72).unwrap();
+        let img = renderer.create_solid_button(Rgba([0, 0, 255, 255]), Some("Test"));
+
+        assert_eq!(img.width(), 72);
+        assert_eq!(img.height(), 72);
+    }
+
+    #[test]
+    fn test_lcd_renderer_create_empty() {
+        let renderer = LcdRenderer::new(200, 100).unwrap();
+        let img = renderer.create_empty();
+
+        assert_eq!(img.width(), 200);
+        assert_eq!(img.height(), 100);
+
+        // Should be black (RGBA 0,0,0,255)
+        let rgba = img.to_rgba8();
+        let pixel = rgba.get_pixel(100, 50);
+        assert_eq!(pixel, &Rgba([0, 0, 0, 255]));
+    }
+
+    #[test]
+    fn test_resize_smaller_image() {
+        // Create a small 10x10 image
+        let small_img = DynamicImage::ImageRgba8(RgbaImage::from_pixel(10, 10, Rgba([255, 0, 0, 255])));
+
+        let renderer = ButtonRenderer::new(72, 72).unwrap();
+        let resized = renderer.resize(small_img);
+
+        // Should be padded to target size
+        assert_eq!(resized.width(), 72);
+        assert_eq!(resized.height(), 72);
+    }
+
+    #[test]
+    fn test_resize_larger_image() {
+        // Create a larger 200x200 image
+        let large_img = DynamicImage::ImageRgba8(RgbaImage::from_pixel(200, 200, Rgba([0, 255, 0, 255])));
+
+        let renderer = ButtonRenderer::new(72, 72).unwrap();
+        let resized = renderer.resize(large_img);
+
+        // Should be resized down
+        assert!(resized.width() <= 72);
+        assert!(resized.height() <= 72);
+    }
+
+    #[test]
+    fn test_resize_non_square_image() {
+        // Create a wide image 100x50
+        let wide_img = DynamicImage::ImageRgba8(RgbaImage::from_pixel(100, 50, Rgba([0, 0, 255, 255])));
+
+        let renderer = ButtonRenderer::new(72, 72).unwrap();
+        let resized = renderer.resize(wide_img);
+
+        // Should preserve aspect ratio and fit within bounds
+        assert!(resized.width() <= 72);
+        assert!(resized.height() <= 72);
+    }
+
+    #[test]
+    fn test_add_label_empty() {
+        let renderer = ButtonRenderer::new(72, 72).unwrap();
+        let mut img = RgbaImage::from_pixel(72, 72, Rgba([0, 0, 0, 255]));
+
+        // Empty label should not modify image (no crash)
+        renderer.add_label(&mut img, "");
+
+        assert_eq!(img.width(), 72);
+    }
+
+    #[test]
+    fn test_add_label_short_text() {
+        let renderer = ButtonRenderer::new(72, 72).unwrap();
+        let mut img = RgbaImage::from_pixel(72, 72, Rgba([0, 0, 0, 255]));
+
+        // Short label should render without issue
+        renderer.add_label(&mut img, "Hi");
+
+        assert_eq!(img.width(), 72);
+    }
+
+    #[test]
+    fn test_add_label_long_text() {
+        let renderer = ButtonRenderer::new(72, 72).unwrap();
+        let mut img = RgbaImage::from_pixel(72, 72, Rgba([0, 0, 0, 255]));
+
+        // Long label should be truncated without crash
+        renderer.add_label(&mut img, "This is a very long label that should be truncated");
+
+        assert_eq!(img.width(), 72);
+    }
+
+    #[test]
+    fn test_url_http_detection() {
+        let source = "http://example.com/image.png";
+        let is_url = source.starts_with("http://") || source.starts_with("https://");
+        assert!(is_url);
+    }
+
+    #[test]
+    fn test_url_https_detection() {
+        let source = "https://cdn.example.com/icon.svg";
+        let is_url = source.starts_with("http://") || source.starts_with("https://");
+        assert!(is_url);
+    }
+
+    #[test]
+    fn test_local_path_detection() {
+        let source = "/home/user/icons/test.png";
+        let is_url = source.starts_with("http://") || source.starts_with("https://");
+        assert!(!is_url);
+    }
+
+    #[test]
+    fn test_relative_path_detection() {
+        let source = "./assets/icon.png";
+        let is_url = source.starts_with("http://") || source.starts_with("https://");
+        assert!(!is_url);
     }
 }

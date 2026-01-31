@@ -10,7 +10,9 @@ mod device;
 mod elgato_key_light;
 mod events;
 mod hid;
+mod image_cache;
 mod input_processor;
+mod key_light_controller;
 mod state_manager;
 mod streamdeck;
 
@@ -23,11 +25,13 @@ pub fn run() {
         config::load_bindings().unwrap_or_else(|_| config::default_bindings()),
     ));
     let system_state = Arc::new(Mutex::new(state_manager::SystemState::default()));
+    let current_page = Arc::new(Mutex::new(0usize));
 
     // Clone for the streamdeck thread
     let device_info_clone = Arc::clone(&device_info);
     let bindings_clone = Arc::clone(&bindings);
     let system_state_clone = Arc::clone(&system_state);
+    let current_page_clone = Arc::clone(&current_page);
 
     // Clone for the state poller thread
     let system_state_poller = Arc::clone(&system_state);
@@ -39,6 +43,7 @@ pub fn run() {
             device_info: Arc::clone(&device_info),
             bindings: Arc::clone(&bindings),
             system_state: Arc::clone(&system_state),
+            current_page: Arc::clone(&current_page),
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_device_info,
@@ -49,6 +54,9 @@ pub fn run() {
             commands::save_bindings,
             commands::sync_button_images,
             commands::get_system_state,
+            commands::get_current_page,
+            commands::set_current_page,
+            commands::get_page_count,
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -56,9 +64,13 @@ pub fn run() {
 
             // Start Stream Deck thread
             std::thread::spawn(move || {
-                if let Err(e) =
-                    crate::streamdeck::run(handle, device_info_clone, bindings_clone, system_state_clone)
-                {
+                if let Err(e) = crate::streamdeck::run(
+                    handle,
+                    device_info_clone,
+                    bindings_clone,
+                    system_state_clone,
+                    current_page_clone,
+                ) {
                     eprintln!("Stream Deck error: {:?}", e);
                 }
             });

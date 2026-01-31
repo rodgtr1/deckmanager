@@ -23,6 +23,7 @@ interface BindingEditorProps {
   selectedInput: InputRef | null;
   bindings: Binding[];
   capabilities: CapabilityInfo[];
+  currentPage: number;
   onSetBinding: (
     input: InputRef,
     capability: Capability,
@@ -30,15 +31,17 @@ interface BindingEditorProps {
     label?: string,
     buttonImage?: string,
     buttonImageAlt?: string,
-    showLabel?: boolean
+    showLabel?: boolean,
+    page?: number
   ) => void;
-  onRemoveBinding: (input: InputRef) => void;
+  onRemoveBinding: (input: InputRef, page?: number) => void;
 }
 
 export default function BindingEditor({
   selectedInput,
   bindings,
   capabilities,
+  currentPage,
   onSetBinding,
   onRemoveBinding,
 }: BindingEditorProps) {
@@ -54,10 +57,11 @@ export default function BindingEditor({
   const [showIconBrowser, setShowIconBrowser] = useState<boolean>(false);
   const [iconBrowserTarget, setIconBrowserTarget] = useState<"default" | "alt">("default");
   const [keyLightIp, setKeyLightIp] = useState<string>("192.168.1.100");
+  const [commandToggle, setCommandToggle] = useState<boolean>(false);
 
-  // Get current binding for selected input
+  // Get current binding for selected input on current page
   const currentBinding = selectedInput
-    ? bindings.find((b) => inputsMatch(b.input, selectedInput))
+    ? bindings.find((b) => inputsMatch(b.input, selectedInput) && b.page === currentPage)
     : undefined;
 
   // Check if this input type supports hardware images
@@ -94,13 +98,21 @@ export default function BindingEditor({
       setButtonImage(currentBinding.button_image || "");
       setButtonImageAlt(currentBinding.button_image_alt || "");
       setShowLabel(currentBinding.show_label || false);
-      if (currentBinding.capability.type === "SystemVolume") {
+      if (
+        currentBinding.capability.type === "SystemAudio" ||
+        currentBinding.capability.type === "VolumeUp" ||
+        currentBinding.capability.type === "VolumeDown" ||
+        currentBinding.capability.type === "Microphone" ||
+        currentBinding.capability.type === "MicVolumeUp" ||
+        currentBinding.capability.type === "MicVolumeDown"
+      ) {
         setStep(currentBinding.capability.step);
       }
-      if (
-        currentBinding.capability.type === "RunCommand" ||
-        currentBinding.capability.type === "LaunchApp"
-      ) {
+      if (currentBinding.capability.type === "RunCommand") {
+        setCommand(currentBinding.capability.command);
+        setCommandToggle(currentBinding.capability.toggle || false);
+      }
+      if (currentBinding.capability.type === "LaunchApp") {
         setCommand(currentBinding.capability.command);
       }
       if (currentBinding.capability.type === "OpenURL") {
@@ -121,6 +133,7 @@ export default function BindingEditor({
       setButtonImageAlt("");
       setShowLabel(false);
       setKeyLightIp("192.168.1.100");
+      setCommandToggle(false);
     }
   }, [currentBinding, selectedInput]);
 
@@ -142,11 +155,29 @@ export default function BindingEditor({
 
     let capability: Capability;
     switch (selectedCapabilityId) {
-      case "SystemVolume":
-        capability = { type: "SystemVolume", step };
+      case "SystemAudio":
+        capability = { type: "SystemAudio", step };
         break;
-      case "ToggleMute":
-        capability = { type: "ToggleMute" };
+      case "Mute":
+        capability = { type: "Mute" };
+        break;
+      case "VolumeUp":
+        capability = { type: "VolumeUp", step };
+        break;
+      case "VolumeDown":
+        capability = { type: "VolumeDown", step };
+        break;
+      case "Microphone":
+        capability = { type: "Microphone", step };
+        break;
+      case "MicMute":
+        capability = { type: "MicMute" };
+        break;
+      case "MicVolumeUp":
+        capability = { type: "MicVolumeUp", step };
+        break;
+      case "MicVolumeDown":
+        capability = { type: "MicVolumeDown", step };
         break;
       case "MediaPlayPause":
         capability = { type: "MediaPlayPause" };
@@ -162,7 +193,7 @@ export default function BindingEditor({
         break;
       case "RunCommand":
         if (!command.trim()) return;
-        capability = { type: "RunCommand", command: command.trim() };
+        capability = { type: "RunCommand", command: command.trim(), toggle: commandToggle };
         break;
       case "LaunchApp":
         if (!command.trim()) return;
@@ -189,17 +220,22 @@ export default function BindingEditor({
     const imageAlt = buttonImageAlt.trim() || undefined;
     const showLabelOnButton = showLabel;
 
-    console.log("handleSave:", { icon, label, image, imageAlt, showLabelOnButton, customLabel });
     onSetBinding(selectedInput, capability, icon, label, image, imageAlt, showLabelOnButton);
 
-    // For Key Light on encoders, automatically create both rotation and press bindings
-    if (selectedCapabilityId === "ElgatoKeyLight" && selectedInput) {
+    // For unified capabilities on encoders, automatically create both rotation and press bindings
+    // This applies to SystemAudio, Microphone, and ElgatoKeyLight
+    const needsBothBindings =
+      selectedCapabilityId === "SystemAudio" ||
+      selectedCapabilityId === "Microphone" ||
+      selectedCapabilityId === "ElgatoKeyLight";
+
+    if (needsBothBindings && selectedInput) {
       if (selectedInput.type === "Encoder") {
-        // Also create EncoderPress binding for toggle
+        // Also create EncoderPress binding
         const pressInput: InputRef = { type: "EncoderPress", index: selectedInput.index };
         onSetBinding(pressInput, capability, icon, label, image, imageAlt, showLabelOnButton);
       } else if (selectedInput.type === "EncoderPress") {
-        // Also create Encoder binding for brightness
+        // Also create Encoder binding
         const rotateInput: InputRef = { type: "Encoder", index: selectedInput.index };
         onSetBinding(rotateInput, capability, icon, label, image, imageAlt, showLabelOnButton);
       }
@@ -208,7 +244,7 @@ export default function BindingEditor({
 
   const handleRemove = () => {
     if (!selectedInput) return;
-    onRemoveBinding(selectedInput);
+    onRemoveBinding(selectedInput, currentPage);
     setSelectedCapabilityId("");
     setCustomIcon("");
     setCustomLabel("");
@@ -243,17 +279,24 @@ export default function BindingEditor({
 
   // Check if the selected capability supports state-based images
   const supportsStateImages =
-    selectedCapabilityId === "ToggleMute" ||
+    selectedCapabilityId === "SystemAudio" ||
+    selectedCapabilityId === "Mute" ||
+    selectedCapabilityId === "Microphone" ||
+    selectedCapabilityId === "MicMute" ||
     selectedCapabilityId === "MediaPlayPause" ||
-    selectedCapabilityId === "ElgatoKeyLight";
+    selectedCapabilityId === "ElgatoKeyLight" ||
+    (selectedCapabilityId === "RunCommand" && commandToggle);
 
   // Check if this is a Key Light capability
   const isKeyLightCapability = selectedCapabilityId === "ElgatoKeyLight";
 
   // Get description for alternate image based on capability
   const getAltImageDescription = (): string => {
-    if (selectedCapabilityId === "ToggleMute") {
+    if (selectedCapabilityId === "SystemAudio" || selectedCapabilityId === "Mute") {
       return "Image shown when audio is muted";
+    }
+    if (selectedCapabilityId === "Microphone" || selectedCapabilityId === "MicMute") {
+      return "Image shown when microphone is muted";
     }
     if (selectedCapabilityId === "MediaPlayPause") {
       return "Image shown when media is playing";
@@ -261,19 +304,28 @@ export default function BindingEditor({
     if (selectedCapabilityId === "ElgatoKeyLight") {
       return "Image shown when light is on";
     }
+    if (selectedCapabilityId === "RunCommand" && commandToggle) {
+      return "Image shown when toggled active";
+    }
     return "Alternate state image";
   };
 
   // Get label for alternate image based on capability
   const getAltImageLabel = (): string => {
-    if (selectedCapabilityId === "ToggleMute") {
+    if (selectedCapabilityId === "SystemAudio" || selectedCapabilityId === "Mute") {
       return "Muted Image";
+    }
+    if (selectedCapabilityId === "Microphone" || selectedCapabilityId === "MicMute") {
+      return "Mic Muted Image";
     }
     if (selectedCapabilityId === "MediaPlayPause") {
       return "Playing Image";
     }
     if (selectedCapabilityId === "ElgatoKeyLight") {
       return "Light On Image";
+    }
+    if (selectedCapabilityId === "RunCommand" && commandToggle) {
+      return "Active Image";
     }
     return "Alternate Image";
   };
@@ -317,7 +369,12 @@ export default function BindingEditor({
         )}
       </div>
 
-      {selectedCapabilityId === "SystemVolume" && (
+      {(selectedCapabilityId === "SystemAudio" ||
+        selectedCapabilityId === "VolumeUp" ||
+        selectedCapabilityId === "VolumeDown" ||
+        selectedCapabilityId === "Microphone" ||
+        selectedCapabilityId === "MicVolumeUp" ||
+        selectedCapabilityId === "MicVolumeDown") && (
         <div className="editor-field">
           <label htmlFor="step-input">Step Size</label>
           <input
@@ -336,17 +393,33 @@ export default function BindingEditor({
       )}
 
       {selectedCapabilityId === "RunCommand" && (
-        <div className="editor-field">
-          <label htmlFor="command-input">Command</label>
-          <input
-            id="command-input"
-            type="text"
-            value={command}
-            onChange={(e) => setCommand(e.target.value)}
-            placeholder="e.g., notify-send 'Hello!'"
-          />
-          <p className="field-description">Shell command to execute</p>
-        </div>
+        <>
+          <div className="editor-field">
+            <label htmlFor="command-input">Command</label>
+            <input
+              id="command-input"
+              type="text"
+              value={command}
+              onChange={(e) => setCommand(e.target.value)}
+              placeholder="e.g., notify-send 'Hello!'"
+            />
+            <p className="field-description">Shell command to execute</p>
+          </div>
+          <div className="editor-field checkbox-field">
+            <label className="checkbox-label" htmlFor="toggle-checkbox">
+              <input
+                id="toggle-checkbox"
+                type="checkbox"
+                checked={commandToggle}
+                onChange={(e) => setCommandToggle(e.target.checked)}
+              />
+              Toggle Mode
+            </label>
+            <p className="field-description">
+              Alternate between default and active image on each press (e.g., for start/stop dictation)
+            </p>
+          </div>
+        </>
       )}
 
       {selectedCapabilityId === "LaunchApp" && (

@@ -18,9 +18,7 @@ function getImageUrl(imagePath: string): string {
   if (imagePath.startsWith("http://") || imagePath.startsWith("https://")) {
     return imagePath;
   }
-  const assetUrl = convertFileSrc(imagePath);
-  console.log("getImageUrl:", { imagePath, assetUrl });
-  return assetUrl;
+  return convertFileSrc(imagePath);
 }
 
 interface DeviceLayoutProps {
@@ -29,8 +27,11 @@ interface DeviceLayoutProps {
   selectedInput: InputRef | null;
   activeInputs: Set<string>;
   systemState: SystemState;
+  currentPage: number;
+  pageCount: number;
   onSelectInput: (input: InputRef) => void;
   onDrop?: (input: InputRef, capabilityId: string) => void;
+  onCopyBinding?: (fromInput: InputRef, toInput: InputRef) => void;
 }
 
 // Get effective image based on system state
@@ -39,7 +40,8 @@ function getEffectiveImage(binding: Binding, state: SystemState): string | undef
 
   // Check if this capability has an "active" state
   const isActive =
-    (capType === "ToggleMute" && state.is_muted) ||
+    ((capType === "SystemAudio" || capType === "Mute") && state.is_muted) ||
+    ((capType === "Microphone" || capType === "MicMute") && state.is_mic_muted) ||
     (capType === "MediaPlayPause" && state.is_playing);
 
   // If active and we have an alt image, use it
@@ -63,15 +65,21 @@ export default function DeviceLayout({
   selectedInput,
   activeInputs,
   systemState,
+  currentPage,
+  pageCount,
   onSelectInput,
   onDrop,
+  onCopyBinding,
 }: DeviceLayoutProps) {
   // Track which input is being dragged over
   const [dragOverInput, setDragOverInput] = useState<string | null>(null);
 
-  // Find binding for a given input
+  // Filter bindings to current page
+  const pageBindings = bindings.filter((b) => b.page === currentPage);
+
+  // Find binding for a given input (on current page)
   const getBinding = (input: InputRef): Binding | undefined => {
-    return bindings.find((b) => inputsMatch(b.input, input));
+    return pageBindings.find((b) => inputsMatch(b.input, input));
   };
 
   // Check if an input is selected
@@ -89,6 +97,18 @@ export default function DeviceLayout({
     return dragOverInput === inputKey(input);
   };
 
+  // Handle drag start for inputs with bindings (to copy/move)
+  const handleInputDragStart = (e: DragEvent, input: InputRef) => {
+    const binding = getBinding(input);
+    if (!binding) {
+      e.preventDefault();
+      return;
+    }
+    // Mark this as an input drag (not a capability drag)
+    e.dataTransfer.setData("application/x-archdeck-input", JSON.stringify(input));
+    e.dataTransfer.effectAllowed = "copyMove";
+  };
+
   // Handle drag over event
   const handleDragOver = (e: DragEvent, input: InputRef) => {
     e.preventDefault();
@@ -102,12 +122,29 @@ export default function DeviceLayout({
   };
 
   // Handle drop event
-  const handleDrop = (e: DragEvent, input: InputRef) => {
+  const handleDrop = (e: DragEvent, toInput: InputRef) => {
     e.preventDefault();
     setDragOverInput(null);
+
+    // Check if this is an input-to-input drag (copy binding)
+    const inputData = e.dataTransfer.getData("application/x-archdeck-input");
+    if (inputData && onCopyBinding) {
+      try {
+        const fromInput = JSON.parse(inputData) as InputRef;
+        // Don't copy to same input
+        if (!inputsMatch(fromInput, toInput)) {
+          onCopyBinding(fromInput, toInput);
+        }
+      } catch {
+        // Invalid data, ignore
+      }
+      return;
+    }
+
+    // Otherwise it's a capability drop from the browser
     const capabilityId = e.dataTransfer.getData("text/plain");
     if (capabilityId && onDrop) {
-      onDrop(input, capabilityId);
+      onDrop(toInput, capabilityId);
     }
   };
 
@@ -136,8 +173,10 @@ export default function DeviceLayout({
       buttons.push(
         <button
           key={`btn-${i}`}
-          className={`deck-button ${selected ? "selected" : ""} ${active ? "active" : ""} ${dragOver ? "drag-over" : ""} ${hasButtonImage ? "has-image" : ""}`}
+          className={`deck-button ${selected ? "selected" : ""} ${active ? "active" : ""} ${dragOver ? "drag-over" : ""} ${hasButtonImage ? "has-image" : ""} ${binding ? "has-binding" : ""}`}
+          draggable={!!binding}
           onClick={() => onSelectInput(input)}
+          onDragStart={(e) => handleInputDragStart(e, input)}
           onDragOver={(e) => handleDragOver(e, input)}
           onDragLeave={handleDragLeave}
           onDrop={(e) => handleDrop(e, input)}
@@ -196,18 +235,25 @@ export default function DeviceLayout({
       encoders.push(
         <div key={`enc-${i}`} className="encoder-group">
           <button
-            className={`encoder-ring ${rotateSelected ? "selected" : ""} ${rotateActive ? "active" : ""} ${rotateDragOver ? "drag-over" : ""}`}
+            className={`encoder-ring ${rotateSelected ? "selected" : ""} ${rotateActive ? "active" : ""} ${rotateDragOver ? "drag-over" : ""} ${rotateBinding ? "has-binding" : ""}`}
+            draggable={!!rotateBinding}
             onClick={() => onSelectInput(rotateInput)}
+            onDragStart={(e) => handleInputDragStart(e, rotateInput)}
             onDragOver={(e) => handleDragOver(e, rotateInput)}
             onDragLeave={handleDragLeave}
             onDrop={(e) => handleDrop(e, rotateInput)}
             title="Encoder rotation"
           >
             <div
-              className={`encoder-center ${pressSelected ? "selected" : ""} ${pressActive ? "active" : ""} ${pressDragOver ? "drag-over" : ""} ${hasEncoderImage ? "has-image" : ""}`}
+              className={`encoder-center ${pressSelected ? "selected" : ""} ${pressActive ? "active" : ""} ${pressDragOver ? "drag-over" : ""} ${hasEncoderImage ? "has-image" : ""} ${pressBinding ? "has-binding" : ""}`}
+              draggable={!!pressBinding}
               onClick={(e) => {
                 e.stopPropagation();
                 onSelectInput(pressInput);
+              }}
+              onDragStart={(e) => {
+                e.stopPropagation();
+                handleInputDragStart(e, pressInput);
               }}
               onDragOver={(e) => {
                 e.stopPropagation();
@@ -279,6 +325,28 @@ export default function DeviceLayout({
     );
   };
 
+  // Render page indicator
+  const renderPageIndicator = () => {
+    const dots = [];
+    for (let i = 0; i < pageCount; i++) {
+      dots.push(
+        <span
+          key={`page-${i}`}
+          className={`page-dot ${i === currentPage ? "active" : ""}`}
+          title={`Page ${i + 1}`}
+        />
+      );
+    }
+
+    return (
+      <div className="page-indicator">
+        <span className="page-label">Page {currentPage + 1} of {pageCount}</span>
+        <div className="page-dots">{dots}</div>
+        <span className="page-hint">Swipe touch strip to change pages</span>
+      </div>
+    );
+  };
+
   return (
     <div className="device-layout">
       <h2 className="device-title">{device.model}</h2>
@@ -298,6 +366,8 @@ export default function DeviceLayout({
       {device.encoder_count > 0 && (
         <div className="encoder-row">{renderEncoders()}</div>
       )}
+
+      {renderPageIndicator()}
     </div>
   );
 }

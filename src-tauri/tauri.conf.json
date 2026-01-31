@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "tauri-app",
+  "productName": "ArchDeck",
   "version": "0.1.0",
-  "identifier": "com.travis.tauri-app",
+  "identifier": "com.archdeck.app",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -28,13 +28,35 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["appimage", "deb", "rpm"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "resources": [
+      "scripts/70-streamdeck.rules",
+      "scripts/setup-udev.sh"
+    ],
+    "linux": {
+      "appimage": {
+        "bundleMediaFramework": false
+      },
+      "deb": {
+        "depends": ["libwebkit2gtk-4.1-0", "libgtk-3-0"],
+        "recommends": ["playerctl", "pipewire"],
+        "section": "utils",
+        "priority": "optional"
+      },
+      "rpm": {
+        "depends": ["webkit2gtk4.1", "gtk3"],
+        "recommends": ["playerctl", "pipewire"]
+      }
+    },
+    "category": "Utility",
+    "shortDescription": "Stream Deck configuration for Linux",
+    "longDescription": "ArchDeck is a Stream Deck configuration application for Linux. Configure buttons, encoders, and touch strips with various actions including media controls, system commands, and Elgato Key Light integration."
   }
 }

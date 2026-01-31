@@ -105,6 +105,11 @@
     color: var(--accent);
 }
 
+.hint-text {
+    color: var(--text-muted);
+    font-size: 0.875rem;
+}
+
 .error-banner {
     padding: 0.75rem 2rem;
     background: rgba(233, 69, 96, 0.2);
@@ -164,6 +169,14 @@
 .deck-button.active {
     background: var(--accent);
     transform: scale(0.95);
+}
+
+.deck-button.has-binding {
+    cursor: grab;
+}
+
+.deck-button.has-binding:active {
+    cursor: grabbing;
 }
 
 .button-index {
@@ -306,6 +319,16 @@
 .encoder-center.active {
     background: var(--accent);
     transform: scale(0.9);
+}
+
+.encoder-ring.has-binding,
+.encoder-center.has-binding {
+    cursor: grab;
+}
+
+.encoder-ring.has-binding:active,
+.encoder-center.has-binding:active {
+    cursor: grabbing;
 }
 
 .encoder-label {
@@ -914,4 +937,48 @@
 .btn-browse-file:hover {
     border-color: var(--text-secondary);
     color: var(--text-primary);
+}
+
+/* Page Indicator */
+.page-indicator {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 1rem;
+    background: var(--bg-secondary);
+    border-radius: 8px;
+    border: 1px solid var(--border);
+}
+
+.page-label {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.page-dots {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.page-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    transition: all 0.2s;
+}
+
+.page-dot.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    transform: scale(1.2);
+}
+
+.page-hint {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    margin-top: 0.25rem;
 }

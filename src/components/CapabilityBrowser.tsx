@@ -12,8 +12,14 @@ const MODULES: Record<string, { icon: string; capabilities: string[] }> = {
   Audio: {
     icon: "\u{1F3B5}",
     capabilities: [
-      "SystemVolume",
-      "ToggleMute",
+      "SystemAudio",
+      "Mute",
+      "VolumeUp",
+      "VolumeDown",
+      "Microphone",
+      "MicMute",
+      "MicVolumeUp",
+      "MicVolumeDown",
       "MediaPlayPause",
       "MediaNext",
       "MediaPrevious",
@@ -34,8 +40,14 @@ const MODULES: Record<string, { icon: string; capabilities: string[] }> = {
 
 // Default icons for capabilities
 const CAPABILITY_ICONS: Record<string, string> = {
-  SystemVolume: "\u{1F50A}",
-  ToggleMute: "\u{1F507}",
+  SystemAudio: "\u{1F50A}",
+  Mute: "\u{1F507}",
+  VolumeUp: "\u{1F50A}",
+  VolumeDown: "\u{1F509}",
+  Microphone: "\u{1F3A4}",
+  MicMute: "\u{1F507}",
+  MicVolumeUp: "\u{1F3A4}",
+  MicVolumeDown: "\u{1F3A4}",
   MediaPlayPause: "\u25B6\uFE0F",
   MediaNext: "\u23ED",
   MediaPrevious: "\u23EE",

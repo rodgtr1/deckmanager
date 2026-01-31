@@ -3,16 +3,29 @@ use crate::button_renderer::{button_size_for_kind, encoder_lcd_size_for_kind, Bu
 use crate::capability::{Capability, KeyLightAction};
 use crate::device::DeviceInfo;
 use crate::elgato_key_light;
-use crate::input_processor::{InputProcessor, LogicalEvent};
+use crate::events::{ConnectionStatusEvent, PageChangeEvent};
+use crate::input_processor::{detect_swipe_direction, InputProcessor, LogicalEvent, SwipeDirection};
+use crate::key_light_controller::KeyLightController;
 use crate::state_manager::{self, SystemState};
 use anyhow::{Context, Result};
 use elgato_streamdeck::{images::ImageRect, info::Kind, list_devices, StreamDeck, StreamDeckInput};
 use hidapi::HidApi;
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
+
+/// Global debounced Key Light controller
+static KEY_LIGHT_CONTROLLER: OnceLock<KeyLightController> = OnceLock::new();
+
+/// Get or initialize the Key Light controller
+fn get_key_light_controller() -> &'static KeyLightController {
+    KEY_LIGHT_CONTROLLER.get_or_init(KeyLightController::new)
+}
+
+/// Interval for checking device reconnection
+const RECONNECT_INTERVAL: Duration = Duration::from_secs(2);
 
 /// Flag to signal when button images need to be re-synced.
 pub static SYNC_IMAGES_FLAG: AtomicBool = AtomicBool::new(false);
@@ -27,7 +40,66 @@ pub fn run(
     device_info_state: Arc<Mutex<Option<DeviceInfo>>>,
     bindings_state: Arc<Mutex<Vec<Binding>>>,
     system_state: Arc<Mutex<SystemState>>,
+    current_page: Arc<Mutex<usize>>,
 ) -> Result<()> {
+    // Outer loop handles connection/reconnection
+    loop {
+        // Try to connect to a Stream Deck
+        let connection = try_connect(&app, &device_info_state);
+
+        match connection {
+            Ok((mut deck, device_kind, button_renderer, lcd_renderer)) => {
+                // Initial image sync on connect
+                {
+                    let bindings = bindings_state.lock().ok();
+                    let state = system_state.lock().ok();
+                    let page = *current_page.lock().unwrap_or_else(|e| e.into_inner());
+                    if let (Some(bindings), Some(state)) = (bindings, state) {
+                        if let Some(ref renderer) = button_renderer {
+                            sync_button_images(&mut deck, &bindings, renderer, device_kind, &state, page);
+                        }
+                        if let Some(ref renderer) = lcd_renderer {
+                            sync_lcd_images(&mut deck, &bindings, renderer, device_kind, &state, page);
+                        }
+                    }
+                }
+
+                // Run the event loop until disconnected
+                let disconnect_reason = run_event_loop(
+                    &app,
+                    &mut deck,
+                    device_kind,
+                    &button_renderer,
+                    &lcd_renderer,
+                    &bindings_state,
+                    &system_state,
+                    &current_page,
+                );
+
+                // Device disconnected
+                eprintln!("Stream Deck disconnected: {}", disconnect_reason);
+                emit_connection_status(&app, false, None);
+
+                // Clear device info
+                if let Ok(mut state) = device_info_state.lock() {
+                    *state = None;
+                }
+            }
+            Err(_) => {
+                // No device found, wait before retrying
+            }
+        }
+
+        // Wait before trying to reconnect
+        std::thread::sleep(RECONNECT_INTERVAL);
+    }
+}
+
+/// Attempt to connect to a Stream Deck device
+fn try_connect(
+    app: &AppHandle,
+    device_info_state: &Arc<Mutex<Option<DeviceInfo>>>,
+) -> Result<(StreamDeck, Kind, Option<ButtonRenderer>, Option<LcdRenderer>)> {
     let hid = HidApi::new().context("hid init failed")?;
     let devices = list_devices(&hid);
 
@@ -36,18 +108,21 @@ pub fn run(
     }
 
     let (kind, serial) = &devices[0];
-    let mut deck = StreamDeck::connect(&hid, *kind, serial)?;
+    let deck = StreamDeck::connect(&hid, *kind, serial)?;
     let device_kind = *kind;
 
-    // Capture device info into shared state
+    // Update device info state
+    let info = DeviceInfo::from_kind(device_kind);
     {
-        let info = DeviceInfo::from_kind(device_kind);
         if let Ok(mut state) = device_info_state.lock() {
-            *state = Some(info);
+            *state = Some(info.clone());
         }
     }
 
-    // Create button renderer
+    // Emit connection event
+    emit_connection_status(app, true, Some(info.model.clone()));
+
+    // Create renderers
     let button_renderer = match create_button_renderer(device_kind) {
         Ok(r) => Some(r),
         Err(e) => {
@@ -56,7 +131,6 @@ pub fn run(
         }
     };
 
-    // Create LCD renderer if device has LCD strip
     let lcd_renderer = match create_lcd_renderer(device_kind) {
         Ok(Some(r)) => Some(r),
         Ok(None) => None,
@@ -66,20 +140,20 @@ pub fn run(
         }
     };
 
-    // Initial image sync on startup
-    {
-        let bindings = bindings_state.lock().ok();
-        let state = system_state.lock().ok();
-        if let (Some(bindings), Some(state)) = (bindings, state) {
-            if let Some(ref renderer) = button_renderer {
-                sync_button_images(&mut deck, &bindings, renderer, device_kind, &state);
-            }
-            if let Some(ref renderer) = lcd_renderer {
-                sync_lcd_images(&mut deck, &bindings, renderer, device_kind, &state);
-            }
-        }
-    }
+    Ok((deck, device_kind, button_renderer, lcd_renderer))
+}
 
+/// Run the main event loop, returns error message when disconnected
+fn run_event_loop(
+    app: &AppHandle,
+    deck: &mut StreamDeck,
+    device_kind: Kind,
+    button_renderer: &Option<ButtonRenderer>,
+    lcd_renderer: &Option<LcdRenderer>,
+    bindings_state: &Arc<Mutex<Vec<Binding>>>,
+    system_state: &Arc<Mutex<SystemState>>,
+    current_page: &Arc<Mutex<usize>>,
+) -> String {
     let mut processor = InputProcessor::default();
 
     loop {
@@ -87,44 +161,99 @@ pub fn run(
         if SYNC_IMAGES_FLAG.swap(false, Ordering::SeqCst) {
             let bindings = bindings_state.lock().ok();
             let state = system_state.lock().ok();
+            let page = *current_page.lock().unwrap_or_else(|e| e.into_inner());
             if let (Some(bindings), Some(state)) = (bindings, state) {
                 if let Some(ref renderer) = button_renderer {
-                    sync_button_images(&mut deck, &bindings, renderer, device_kind, &state);
+                    sync_button_images(deck, &bindings, renderer, device_kind, &state, page);
                 }
                 if let Some(ref renderer) = lcd_renderer {
-                    sync_lcd_images(&mut deck, &bindings, renderer, device_kind, &state);
+                    sync_lcd_images(deck, &bindings, renderer, device_kind, &state, page);
                 }
             }
         }
 
-        let input = deck.read_input(Some(Duration::from_millis(50)))?;
+        // Read input with timeout
+        let input = match deck.read_input(Some(Duration::from_millis(50))) {
+            Ok(input) => input,
+            Err(e) => {
+                // Device disconnected or error
+                return format!("{}", e);
+            }
+        };
 
-        // Get current bindings snapshot for this iteration
+        // Get current bindings snapshot and page
         let bindings = bindings_state
             .lock()
             .ok()
             .map(|b| b.clone())
             .unwrap_or_default();
+        let page = *current_page.lock().unwrap_or_else(|e| e.into_inner());
+
+        // Filter bindings to current page for event handling
+        let page_bindings: Vec<_> = bindings.iter().filter(|b| b.page == page).cloned().collect();
 
         match input {
             StreamDeckInput::ButtonStateChange(states) => {
                 for event in processor.process_buttons(&states) {
-                    emit_event(&app, event.clone());
-                    handle_logical_event(event, &bindings, &system_state);
+                    emit_event(app, event.clone());
+                    handle_logical_event(event, &page_bindings, system_state);
                 }
             }
 
             StreamDeckInput::EncoderTwist(deltas) => {
                 for event in processor.process_encoders(&deltas) {
-                    emit_event(&app, event.clone());
-                    handle_logical_event(event, &bindings, &system_state);
+                    emit_event(app, event.clone());
+                    handle_logical_event(event, &page_bindings, system_state);
                 }
             }
 
             StreamDeckInput::TouchScreenSwipe(start, end) => {
                 let event = processor.process_swipe(start, end);
-                emit_event(&app, event.clone());
-                handle_logical_event(event, &bindings, &system_state);
+                emit_event(app, event.clone());
+
+                #[cfg(debug_assertions)]
+                eprintln!("Swipe detected: start={:?}, end={:?}", start, end);
+
+                // Check for page navigation swipe
+                if let Some(direction) = detect_swipe_direction(start, end) {
+                    let max_binding_page = get_max_page(&bindings);
+                    // Allow navigation to one empty page beyond the last page with bindings
+                    // e.g., if bindings on pages 0,1 -> can navigate to 0, 1, 2 (empty)
+                    let max_allowed_page = max_binding_page + 1;
+                    let page_count = max_allowed_page + 1; // Total pages for display
+
+                    #[cfg(debug_assertions)]
+                    eprintln!("Swipe direction: {:?}, current_page={}, max_binding_page={}, max_allowed={}", direction, page, max_binding_page, max_allowed_page);
+
+                    // Linear navigation - no wrapping
+                    let new_page = match direction {
+                        SwipeDirection::Left => {
+                            // Swipe left = next page (capped at max)
+                            if page >= max_allowed_page { page } else { page + 1 }
+                        }
+                        SwipeDirection::Right => {
+                            // Swipe right = previous page (capped at 0)
+                            if page == 0 { 0 } else { page - 1 }
+                        }
+                    };
+
+                    #[cfg(debug_assertions)]
+                    eprintln!("Page change: {} -> {}", page, new_page);
+
+                    // Only update if page actually changed
+                    if new_page != page {
+                        if let Ok(mut p) = current_page.lock() {
+                            *p = new_page;
+                        }
+                        emit_page_change(app, new_page, page_count);
+                        request_image_sync();
+                    }
+                } else {
+                    #[cfg(debug_assertions)]
+                    eprintln!("Swipe too short or vertical, not a page change");
+                    // Not a page navigation swipe, handle normally
+                    handle_logical_event(event, &page_bindings, system_state);
+                }
             }
 
             StreamDeckInput::EncoderStateChange(states) => {
@@ -132,14 +261,32 @@ pub fn run(
                 println!("RAW encoder state: {:?}", states);
 
                 for event in processor.process_encoder_presses(&states) {
-                    emit_event(&app, event.clone());
-                    handle_logical_event(event, &bindings, &system_state);
+                    emit_event(app, event.clone());
+                    handle_logical_event(event, &page_bindings, system_state);
                 }
             }
 
             _ => {}
         }
     }
+}
+
+/// Get the maximum page number from bindings (0 if no bindings)
+fn get_max_page(bindings: &[Binding]) -> usize {
+    bindings.iter().map(|b| b.page).max().unwrap_or(0)
+}
+
+/// Emit page change event to frontend
+fn emit_page_change(app: &AppHandle, page: usize, page_count: usize) {
+    let _ = app.emit("streamdeck:page", PageChangeEvent { page, page_count });
+}
+
+/// Emit connection status event to frontend
+fn emit_connection_status(app: &AppHandle, connected: bool, model: Option<String>) {
+    let _ = app.emit(
+        "streamdeck:connection",
+        ConnectionStatusEvent { connected, model },
+    );
 }
 
 /// Create a button renderer for the given device kind.
@@ -156,18 +303,45 @@ fn create_lcd_renderer(kind: Kind) -> Result<Option<LcdRenderer>> {
     }
 }
 
+/// Get a unique key for a binding (used for toggle state tracking)
+fn binding_key(binding: &Binding) -> String {
+    let input_key = match &binding.input {
+        InputRef::Button { index } => format!("btn:{}", index),
+        InputRef::Encoder { index } => format!("enc:{}", index),
+        InputRef::EncoderPress { index } => format!("encp:{}", index),
+        InputRef::Swipe => "swipe".to_string(),
+    };
+    format!("{}:{}", input_key, binding.page)
+}
+
+/// Flip the toggle state for a binding and request image sync
+fn flip_toggle_state(binding: &Binding, system_state: &Arc<Mutex<SystemState>>) {
+    let key = binding_key(binding);
+    if let Ok(mut state) = system_state.lock() {
+        let current = state.toggle_states.get(&key).copied().unwrap_or(false);
+        state.toggle_states.insert(key, !current);
+    }
+    request_image_sync();
+}
+
 /// Get the effective image for a binding based on current system state.
 /// Returns (image_to_use, has_image)
 fn get_effective_image<'a>(binding: &'a Binding, state: &SystemState) -> Option<&'a str> {
     // Check if this capability has an "active" state
     let is_active = match &binding.capability {
-        Capability::ToggleMute => state.is_muted,
+        Capability::SystemAudio { .. } | Capability::Mute => state.is_muted,
+        Capability::Microphone { .. } | Capability::MicMute => state.is_mic_muted,
         Capability::MediaPlayPause => state.is_playing,
         Capability::ElgatoKeyLight { ip, port, .. } => {
             // Check if key light is on
             state.key_lights.get(&format!("{}:{}", ip, port))
                 .map(|s| s.on)
                 .unwrap_or(false)
+        }
+        Capability::RunCommand { toggle: true, .. } => {
+            // Check toggle state for this binding
+            let key = binding_key(binding);
+            state.toggle_states.get(&key).copied().unwrap_or(false)
         }
         _ => false,
     };
@@ -190,13 +364,15 @@ fn sync_button_images(
     renderer: &ButtonRenderer,
     kind: Kind,
     state: &SystemState,
+    current_page: usize,
 ) {
     let button_count = kind.key_count();
 
     // Track which buttons have been set
     let mut buttons_set = vec![false; button_count as usize];
 
-    for binding in bindings {
+    // Filter to current page
+    for binding in bindings.iter().filter(|b| b.page == current_page) {
         if let InputRef::Button { index } = &binding.input {
             let key = *index as u8;
             if key >= button_count {
@@ -210,6 +386,7 @@ fn sync_button_images(
             let render_binding = Binding {
                 input: binding.input.clone(),
                 capability: binding.capability.clone(),
+                page: binding.page,
                 icon: binding.icon.clone(),
                 label: binding.label.clone(),
                 button_image: effective_image.map(String::from),
@@ -263,6 +440,7 @@ fn sync_lcd_images(
     renderer: &LcdRenderer,
     kind: Kind,
     state: &SystemState,
+    current_page: usize,
 ) {
     let encoder_count = kind.encoder_count();
     if encoder_count == 0 {
@@ -273,16 +451,19 @@ fn sync_lcd_images(
         return;
     };
 
+    // Filter to current page
+    let page_bindings: Vec<_> = bindings.iter().filter(|b| b.page == current_page).collect();
+
     for encoder_idx in 0..encoder_count {
         // Find the EncoderPress binding for this encoder (primary)
-        let press_binding = bindings.iter().find(|b| {
+        let press_binding = page_bindings.iter().find(|b| {
             matches!(&b.input, InputRef::EncoderPress { index } if *index == encoder_idx as usize)
-        });
+        }).copied();
 
         // Find the Encoder (rotation) binding as fallback
-        let rotate_binding = bindings.iter().find(|b| {
+        let rotate_binding = page_bindings.iter().find(|b| {
             matches!(&b.input, InputRef::Encoder { index } if *index == encoder_idx as usize)
-        });
+        }).copied();
 
         // Calculate X position for this encoder section
         let x = (encoder_idx as u32 * section_w) as u16;
@@ -314,6 +495,7 @@ fn sync_lcd_images(
                 let render_binding = Binding {
                     input: binding.input.clone(),
                     capability: binding.capability.clone(),
+                    page: binding.page,
                     icon: binding.icon.clone(),
                     label: binding.label.clone(),
                     button_image: Some(img_path.to_string()),
@@ -363,15 +545,82 @@ fn handle_logical_event(event: LogicalEvent, bindings: &[Binding], system_state:
         }
 
         match (&binding.capability, &event) {
-            (Capability::ToggleMute, LogicalEvent::EncoderPress(e)) if e.pressed => {
+            // SystemAudio: encoder rotation = volume, encoder press = mute
+            (Capability::SystemAudio { .. }, LogicalEvent::EncoderPress(e)) if e.pressed => {
                 toggle_mute();
-                // Request immediate state check to update icon
                 state_manager::request_state_check();
             }
 
-            (Capability::ToggleMute, LogicalEvent::Button(e)) if e.pressed => {
+            (Capability::SystemAudio { step }, LogicalEvent::Encoder(e)) => {
+                apply_volume_delta(e.delta as f32 * step);
+            }
+
+            // Mute toggle (for buttons)
+            (Capability::Mute, LogicalEvent::Button(e)) if e.pressed => {
                 toggle_mute();
                 state_manager::request_state_check();
+            }
+
+            (Capability::Mute, LogicalEvent::EncoderPress(e)) if e.pressed => {
+                toggle_mute();
+                state_manager::request_state_check();
+            }
+
+            // Volume Up (for buttons)
+            (Capability::VolumeUp { step }, LogicalEvent::Button(e)) if e.pressed => {
+                apply_volume_delta(*step);
+            }
+
+            (Capability::VolumeUp { step }, LogicalEvent::EncoderPress(e)) if e.pressed => {
+                apply_volume_delta(*step);
+            }
+
+            // Volume Down (for buttons)
+            (Capability::VolumeDown { step }, LogicalEvent::Button(e)) if e.pressed => {
+                apply_volume_delta(-*step);
+            }
+
+            (Capability::VolumeDown { step }, LogicalEvent::EncoderPress(e)) if e.pressed => {
+                apply_volume_delta(-*step);
+            }
+
+            // Microphone: encoder rotation = volume, encoder press = mute
+            (Capability::Microphone { .. }, LogicalEvent::EncoderPress(e)) if e.pressed => {
+                toggle_mic_mute();
+                state_manager::request_state_check();
+            }
+
+            (Capability::Microphone { step }, LogicalEvent::Encoder(e)) => {
+                apply_mic_volume_delta(e.delta as f32 * step);
+            }
+
+            // Mic Mute toggle (for buttons)
+            (Capability::MicMute, LogicalEvent::Button(e)) if e.pressed => {
+                toggle_mic_mute();
+                state_manager::request_state_check();
+            }
+
+            (Capability::MicMute, LogicalEvent::EncoderPress(e)) if e.pressed => {
+                toggle_mic_mute();
+                state_manager::request_state_check();
+            }
+
+            // Mic Volume Up (for buttons)
+            (Capability::MicVolumeUp { step }, LogicalEvent::Button(e)) if e.pressed => {
+                apply_mic_volume_delta(*step);
+            }
+
+            (Capability::MicVolumeUp { step }, LogicalEvent::EncoderPress(e)) if e.pressed => {
+                apply_mic_volume_delta(*step);
+            }
+
+            // Mic Volume Down (for buttons)
+            (Capability::MicVolumeDown { step }, LogicalEvent::Button(e)) if e.pressed => {
+                apply_mic_volume_delta(-*step);
+            }
+
+            (Capability::MicVolumeDown { step }, LogicalEvent::EncoderPress(e)) if e.pressed => {
+                apply_mic_volume_delta(-*step);
             }
 
             (Capability::MediaPlayPause, LogicalEvent::EncoderPress(e)) if e.pressed => {
@@ -408,12 +657,18 @@ fn handle_logical_event(event: LogicalEvent, bindings: &[Binding], system_state:
                 media_stop();
             }
 
-            (Capability::RunCommand { command }, LogicalEvent::EncoderPress(e)) if e.pressed => {
+            (Capability::RunCommand { command, toggle }, LogicalEvent::EncoderPress(e)) if e.pressed => {
                 run_shell_command(command);
+                if *toggle {
+                    flip_toggle_state(binding, system_state);
+                }
             }
 
-            (Capability::RunCommand { command }, LogicalEvent::Button(e)) if e.pressed => {
+            (Capability::RunCommand { command, toggle }, LogicalEvent::Button(e)) if e.pressed => {
                 run_shell_command(command);
+                if *toggle {
+                    flip_toggle_state(binding, system_state);
+                }
             }
 
             (Capability::LaunchApp { command }, LogicalEvent::EncoderPress(e)) if e.pressed => {
@@ -430,10 +685,6 @@ fn handle_logical_event(event: LogicalEvent, bindings: &[Binding], system_state:
 
             (Capability::OpenURL { url }, LogicalEvent::Button(e)) if e.pressed => {
                 open_url(url);
-            }
-
-            (Capability::SystemVolume { step }, LogicalEvent::Encoder(e)) => {
-                apply_volume_delta(e.delta as f32 * step);
             }
 
             // Elgato Key Light controls
@@ -471,16 +722,21 @@ fn handle_key_light_button(ip: &str, port: u16, action: &KeyLightAction, system_
 
     // Update key light state and trigger image sync
     update_key_light_state_and_sync(ip, port, system_state);
+
+    // Also update the controller's cache so brightness adjustments have accurate state
+    if let Ok(state) = elgato_key_light::get_state(ip, port) {
+        get_key_light_controller().update_cached_state(ip, port, &state);
+    }
 }
 
-fn handle_key_light_brightness(ip: &str, port: u16, delta: i8, system_state: &Arc<Mutex<SystemState>>) {
+fn handle_key_light_brightness(ip: &str, port: u16, delta: i8, _system_state: &Arc<Mutex<SystemState>>) {
     let brightness_delta = delta as i32 * 2; // 2% per tick
-    if let Err(e) = elgato_key_light::adjust_brightness(ip, port, brightness_delta) {
-        eprintln!("Key Light brightness error: {e}");
-    }
 
-    // Update key light state and trigger image sync
-    update_key_light_state_and_sync(ip, port, system_state);
+    // Queue the adjustment - will be debounced and sent in batch
+    get_key_light_controller().queue_brightness_delta(ip, port, brightness_delta);
+
+    // Note: State sync happens after debounce in the controller's background thread
+    // We don't block the event loop waiting for HTTP responses
 }
 
 fn update_key_light_state_and_sync(ip: &str, port: u16, system_state: &Arc<Mutex<SystemState>>) {
@@ -532,6 +788,44 @@ fn toggle_mute() {
     let _ = Command::new("wpctl")
         .args(["set-mute", "@DEFAULT_AUDIO_SINK@", "toggle"])
         .status();
+}
+
+fn toggle_mic_mute() {
+    let _ = Command::new("wpctl")
+        .args(["set-mute", "@DEFAULT_AUDIO_SOURCE@", "toggle"])
+        .status();
+}
+
+fn get_current_mic_volume() -> Option<f32> {
+    let output = Command::new("wpctl")
+        .args(["get-volume", "@DEFAULT_AUDIO_SOURCE@"])
+        .output()
+        .ok()?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    // Expected: "Volume: 0.42" or "Volume: 0.42 [MUTED]"
+    stdout
+        .split_whitespace()
+        .find_map(|word| word.parse::<f32>().ok())
+}
+
+fn apply_mic_volume_delta(delta: f32) {
+    // Read current volume
+    let current = get_current_mic_volume().unwrap_or(0.5);
+
+    // Apply + clamp
+    let new_volume = (current + delta).clamp(0.0, 1.0);
+
+    let arg = format!("{:.3}", new_volume);
+
+    let result = Command::new("wpctl")
+        .args(["set-volume", "@DEFAULT_AUDIO_SOURCE@", &arg])
+        .status();
+
+    if let Err(err) = result {
+        eprintln!("Failed to set mic volume: {err}");
+    }
 }
 
 fn media_play_pause() {

@@ -14,9 +14,12 @@ use tauri::{AppHandle, Emitter};
 #[derive(Debug, Clone, Default)]
 pub struct SystemState {
     pub is_muted: bool,
+    pub is_mic_muted: bool,
     pub is_playing: bool,
     /// Key light states: "ip:port" -> KeyLightState
     pub key_lights: HashMap<String, KeyLightState>,
+    /// Toggle states for RunCommand with toggle=true: "input_key:page" -> is_active
+    pub toggle_states: HashMap<String, bool>,
 }
 
 /// Flag to request immediate state check (e.g., after button press)
@@ -31,6 +34,22 @@ pub fn request_state_check() {
 pub fn check_mute_state() -> bool {
     let output = Command::new("wpctl")
         .args(["get-volume", "@DEFAULT_AUDIO_SINK@"])
+        .output();
+
+    match output {
+        Ok(out) => {
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            // Output looks like "Volume: 0.50" or "Volume: 0.50 [MUTED]"
+            stdout.contains("[MUTED]")
+        }
+        Err(_) => false,
+    }
+}
+
+/// Check if microphone is currently muted via wpctl
+pub fn check_mic_mute_state() -> bool {
+    let output = Command::new("wpctl")
+        .args(["get-volume", "@DEFAULT_AUDIO_SOURCE@"])
         .output();
 
     match output {
@@ -63,12 +82,16 @@ pub fn check_playing_state() -> bool {
 pub fn get_current_state() -> SystemState {
     SystemState {
         is_muted: check_mute_state(),
+        is_mic_muted: check_mic_mute_state(),
         is_playing: check_playing_state(),
         key_lights: HashMap::new(),
+        toggle_states: HashMap::new(),
     }
 }
 
 /// Check key light state for a specific light
+/// (Reserved for future key light state polling)
+#[allow(dead_code)]
 pub fn check_key_light_state(ip: &str, port: u16) -> Option<KeyLightState> {
     elgato_key_light::get_state(ip, port).ok()
 }
@@ -77,6 +100,7 @@ pub fn check_key_light_state(ip: &str, port: u16) -> Option<KeyLightState> {
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct StateChangeEvent {
     pub is_muted: bool,
+    pub is_mic_muted: bool,
     pub is_playing: bool,
     pub key_lights: HashMap<String, KeyLightState>,
 }
@@ -96,13 +120,18 @@ pub fn run_state_poller(app: AppHandle, state: Arc<Mutex<SystemState>>) {
             // Copy over existing key light states (they're checked on demand)
             new_state.key_lights = current.key_lights.clone();
 
-            if new_state.is_muted != current.is_muted || new_state.is_playing != current.is_playing {
+            let state_changed = new_state.is_muted != current.is_muted
+                || new_state.is_mic_muted != current.is_mic_muted
+                || new_state.is_playing != current.is_playing;
+
+            if state_changed {
                 *current = new_state.clone();
                 drop(current); // Release lock before emitting
 
                 // Emit state change event
                 let _ = app.emit("state:change", StateChangeEvent {
                     is_muted: new_state.is_muted,
+                    is_mic_muted: new_state.is_mic_muted,
                     is_playing: new_state.is_playing,
                     key_lights: new_state.key_lights,
                 });
@@ -127,12 +156,17 @@ pub fn run_state_poller(app: AppHandle, state: Arc<Mutex<SystemState>>) {
                 // Copy over existing key light states
                 new_state.key_lights = current.key_lights.clone();
 
-                if new_state.is_muted != current.is_muted || new_state.is_playing != current.is_playing {
+                let state_changed = new_state.is_muted != current.is_muted
+                    || new_state.is_mic_muted != current.is_mic_muted
+                    || new_state.is_playing != current.is_playing;
+
+                if state_changed {
                     *current = new_state.clone();
                     drop(current);
 
                     let _ = app.emit("state:change", StateChangeEvent {
                         is_muted: new_state.is_muted,
+                        is_mic_muted: new_state.is_mic_muted,
                         is_playing: new_state.is_playing,
                         key_lights: new_state.key_lights,
                     });
@@ -145,6 +179,8 @@ pub fn run_state_poller(app: AppHandle, state: Arc<Mutex<SystemState>>) {
 }
 
 /// Update key light state in the system state
+/// (Reserved for future key light state polling)
+#[allow(dead_code)]
 pub fn update_key_light_state(
     state: &Arc<Mutex<SystemState>>,
     ip: &str,

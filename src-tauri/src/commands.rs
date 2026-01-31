@@ -13,6 +13,7 @@ pub struct AppState {
     pub device_info: Arc<Mutex<Option<DeviceInfo>>>,
     pub bindings: Arc<Mutex<Vec<Binding>>>,
     pub system_state: Arc<Mutex<SystemState>>,
+    pub current_page: Arc<Mutex<usize>>,
 }
 
 /// Information about an available capability for the frontend.
@@ -54,12 +55,12 @@ pub fn get_bindings(state: State<AppState>) -> Vec<Binding> {
 pub fn get_capabilities() -> Vec<CapabilityInfo> {
     vec![
         CapabilityInfo {
-            id: "SystemVolume".to_string(),
-            name: "System Volume".to_string(),
-            description: "Adjust system volume with encoder rotation".to_string(),
+            id: "SystemAudio".to_string(),
+            name: "System Audio".to_string(),
+            description: "Full audio control for encoders. Rotation: volume, Press: mute toggle".to_string(),
             supports_button: false,
             supports_encoder: true,
-            supports_encoder_press: false,
+            supports_encoder_press: true,
             parameters: vec![CapabilityParameter {
                 name: "step".to_string(),
                 param_type: "f32".to_string(),
@@ -68,13 +69,92 @@ pub fn get_capabilities() -> Vec<CapabilityInfo> {
             }],
         },
         CapabilityInfo {
-            id: "ToggleMute".to_string(),
-            name: "Toggle Mute".to_string(),
+            id: "Mute".to_string(),
+            name: "Mute".to_string(),
             description: "Toggle system audio mute on/off".to_string(),
             supports_button: true,
             supports_encoder: false,
             supports_encoder_press: true,
             parameters: vec![],
+        },
+        CapabilityInfo {
+            id: "VolumeUp".to_string(),
+            name: "Volume Up".to_string(),
+            description: "Increase system volume".to_string(),
+            supports_button: true,
+            supports_encoder: false,
+            supports_encoder_press: true,
+            parameters: vec![CapabilityParameter {
+                name: "step".to_string(),
+                param_type: "f32".to_string(),
+                default_value: "0.05".to_string(),
+                description: "Volume increase per press (0.0-1.0)".to_string(),
+            }],
+        },
+        CapabilityInfo {
+            id: "VolumeDown".to_string(),
+            name: "Volume Down".to_string(),
+            description: "Decrease system volume".to_string(),
+            supports_button: true,
+            supports_encoder: false,
+            supports_encoder_press: true,
+            parameters: vec![CapabilityParameter {
+                name: "step".to_string(),
+                param_type: "f32".to_string(),
+                default_value: "0.05".to_string(),
+                description: "Volume decrease per press (0.0-1.0)".to_string(),
+            }],
+        },
+        CapabilityInfo {
+            id: "Microphone".to_string(),
+            name: "Microphone".to_string(),
+            description: "Full mic control for encoders. Rotation: volume, Press: mute toggle".to_string(),
+            supports_button: false,
+            supports_encoder: true,
+            supports_encoder_press: true,
+            parameters: vec![CapabilityParameter {
+                name: "step".to_string(),
+                param_type: "f32".to_string(),
+                default_value: "0.02".to_string(),
+                description: "Volume change per encoder tick (0.0-1.0)".to_string(),
+            }],
+        },
+        CapabilityInfo {
+            id: "MicMute".to_string(),
+            name: "Mic Mute".to_string(),
+            description: "Toggle microphone mute on/off".to_string(),
+            supports_button: true,
+            supports_encoder: false,
+            supports_encoder_press: true,
+            parameters: vec![],
+        },
+        CapabilityInfo {
+            id: "MicVolumeUp".to_string(),
+            name: "Mic Volume Up".to_string(),
+            description: "Increase microphone volume".to_string(),
+            supports_button: true,
+            supports_encoder: false,
+            supports_encoder_press: true,
+            parameters: vec![CapabilityParameter {
+                name: "step".to_string(),
+                param_type: "f32".to_string(),
+                default_value: "0.05".to_string(),
+                description: "Volume increase per press (0.0-1.0)".to_string(),
+            }],
+        },
+        CapabilityInfo {
+            id: "MicVolumeDown".to_string(),
+            name: "Mic Volume Down".to_string(),
+            description: "Decrease microphone volume".to_string(),
+            supports_button: true,
+            supports_encoder: false,
+            supports_encoder_press: true,
+            parameters: vec![CapabilityParameter {
+                name: "step".to_string(),
+                param_type: "f32".to_string(),
+                default_value: "0.05".to_string(),
+                description: "Volume decrease per press (0.0-1.0)".to_string(),
+            }],
         },
         CapabilityInfo {
             id: "MediaPlayPause".to_string(),
@@ -115,16 +195,24 @@ pub fn get_capabilities() -> Vec<CapabilityInfo> {
         CapabilityInfo {
             id: "RunCommand".to_string(),
             name: "Run Command".to_string(),
-            description: "Execute a shell command".to_string(),
+            description: "Execute a shell command. Enable toggle mode for commands that flip between states (e.g., start/stop dictation)".to_string(),
             supports_button: true,
             supports_encoder: false,
             supports_encoder_press: true,
-            parameters: vec![CapabilityParameter {
-                name: "command".to_string(),
-                param_type: "string".to_string(),
-                default_value: "".to_string(),
-                description: "Shell command to execute".to_string(),
-            }],
+            parameters: vec![
+                CapabilityParameter {
+                    name: "command".to_string(),
+                    param_type: "string".to_string(),
+                    default_value: "".to_string(),
+                    description: "Shell command to execute".to_string(),
+                },
+                CapabilityParameter {
+                    name: "toggle".to_string(),
+                    param_type: "bool".to_string(),
+                    default_value: "false".to_string(),
+                    description: "Toggle mode: alternate between default and active image on each press".to_string(),
+                },
+            ],
         },
         CapabilityInfo {
             id: "LaunchApp".to_string(),
@@ -178,6 +266,8 @@ pub struct SetBindingParams {
     pub input: InputRef,
     pub capability: Capability,
     #[serde(default)]
+    pub page: usize,
+    #[serde(default)]
     pub icon: Option<String>,
     #[serde(default)]
     pub label: Option<String>,
@@ -194,19 +284,20 @@ pub struct SetBindingParams {
 pub fn set_binding(state: State<AppState>, params: SetBindingParams) -> Result<(), String> {
     #[cfg(debug_assertions)]
     eprintln!(
-        "set_binding called: button_image={:?}, show_label={:?}",
-        params.button_image, params.show_label
+        "set_binding called: page={}, button_image={:?}, show_label={:?}",
+        params.page, params.button_image, params.show_label
     );
 
     let mut bindings = state.bindings.lock().map_err(|e| e.to_string())?;
 
-    // Remove existing binding for this input if present
-    bindings.retain(|b| !inputs_match(&b.input, &params.input));
+    // Remove existing binding for this input AND page if present
+    bindings.retain(|b| !(inputs_match(&b.input, &params.input) && b.page == params.page));
 
     // Add new binding
     bindings.push(Binding {
         input: params.input,
         capability: params.capability,
+        page: params.page,
         icon: params.icon,
         label: params.label,
         button_image: params.button_image,
@@ -220,16 +311,45 @@ pub fn set_binding(state: State<AppState>, params: SetBindingParams) -> Result<(
     Ok(())
 }
 
-/// Remove a binding for an input.
+/// Remove a binding for an input on a specific page.
 #[tauri::command]
-pub fn remove_binding(state: State<AppState>, input: InputRef) -> Result<(), String> {
+pub fn remove_binding(state: State<AppState>, input: InputRef, page: Option<usize>) -> Result<(), String> {
+    let current_page = *state.current_page.lock().map_err(|e| e.to_string())?;
+    let target_page = page.unwrap_or(current_page);
+
     let mut bindings = state.bindings.lock().map_err(|e| e.to_string())?;
-    bindings.retain(|b| !inputs_match(&b.input, &input));
+    bindings.retain(|b| !(inputs_match(&b.input, &input) && b.page == target_page));
 
     // Request button image sync to clear the removed button
     streamdeck::request_image_sync();
 
     Ok(())
+}
+
+/// Get the current page number.
+#[tauri::command]
+pub fn get_current_page(state: State<AppState>) -> usize {
+    *state.current_page.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Set the current page number.
+#[tauri::command]
+pub fn set_current_page(state: State<AppState>, page: usize) {
+    if let Ok(mut current) = state.current_page.lock() {
+        *current = page;
+    }
+    // Sync hardware to show the new page's bindings
+    streamdeck::request_image_sync();
+}
+
+/// Get the total number of pages (based on max page in bindings + 1).
+#[tauri::command]
+pub fn get_page_count(state: State<AppState>) -> usize {
+    let bindings = state.bindings.lock().ok();
+    match bindings {
+        Some(b) => b.iter().map(|binding| binding.page).max().unwrap_or(0) + 1,
+        None => 1,
+    }
 }
 
 /// Sync button images to hardware.
@@ -304,8 +424,8 @@ mod tests {
     fn capabilities_list_not_empty() {
         let caps = get_capabilities();
         assert!(!caps.is_empty());
-        assert!(caps.iter().any(|c| c.id == "SystemVolume"));
-        assert!(caps.iter().any(|c| c.id == "ToggleMute"));
+        assert!(caps.iter().any(|c| c.id == "SystemAudio"));
+        assert!(caps.iter().any(|c| c.id == "Microphone"));
         assert!(caps.iter().any(|c| c.id == "MediaPlayPause"));
         assert!(caps.iter().any(|c| c.id == "MediaNext"));
         assert!(caps.iter().any(|c| c.id == "MediaPrevious"));

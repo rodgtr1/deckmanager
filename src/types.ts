@@ -21,13 +21,19 @@ export type KeyLightAction = "Toggle" | "On" | "Off" | "SetBrightness";
 
 // Capability types matching Rust's Capability enum
 export type Capability =
-  | { type: "SystemVolume"; step: number }
-  | { type: "ToggleMute" }
+  | { type: "SystemAudio"; step: number }
+  | { type: "Mute" }
+  | { type: "VolumeUp"; step: number }
+  | { type: "VolumeDown"; step: number }
+  | { type: "Microphone"; step: number }
+  | { type: "MicMute" }
+  | { type: "MicVolumeUp"; step: number }
+  | { type: "MicVolumeDown"; step: number }
   | { type: "MediaPlayPause" }
   | { type: "MediaNext" }
   | { type: "MediaPrevious" }
   | { type: "MediaStop" }
-  | { type: "RunCommand"; command: string }
+  | { type: "RunCommand"; command: string; toggle?: boolean }
   | { type: "LaunchApp"; command: string }
   | { type: "OpenURL"; url: string }
   | { type: "ElgatoKeyLight"; ip: string; port: number; action: KeyLightAction };
@@ -35,6 +41,7 @@ export type Capability =
 export interface Binding {
   input: InputRef;
   capability: Capability;
+  page: number;              // Which page this binding belongs to (0-indexed)
   icon?: string;             // Custom emoji or icon name (UI only)
   label?: string;            // Custom display text (UI only)
   button_image?: string;     // File path or URL for hardware button (default state)
@@ -45,6 +52,7 @@ export interface Binding {
 // System state for stateful capabilities
 export interface SystemState {
   is_muted: boolean;
+  is_mic_muted: boolean;
   is_playing: boolean;
 }
 
@@ -80,6 +88,18 @@ export interface EncoderEvent {
 export interface TouchSwipeEvent {
   start: [number, number];
   end: [number, number];
+}
+
+// Device connection status event
+export interface ConnectionStatusEvent {
+  connected: boolean;
+  model: string | null;
+}
+
+// Page change event
+export interface PageChangeEvent {
+  page: number;
+  page_count: number;
 }
 
 // Helper to create InputRef
@@ -119,10 +139,22 @@ export function getInputDisplayName(input: InputRef): string {
 // Get display name for a capability
 export function getCapabilityDisplayName(cap: Capability): string {
   switch (cap.type) {
-    case "SystemVolume":
-      return "Volume";
-    case "ToggleMute":
+    case "SystemAudio":
+      return "Audio";
+    case "Mute":
       return "Mute";
+    case "VolumeUp":
+      return "Vol+";
+    case "VolumeDown":
+      return "Vol-";
+    case "Microphone":
+      return "Mic";
+    case "MicMute":
+      return "Mic Mute";
+    case "MicVolumeUp":
+      return "Mic+";
+    case "MicVolumeDown":
+      return "Mic-";
     case "MediaPlayPause":
       return "Play/Pause";
     case "MediaNext":

@@ -14,6 +14,9 @@ import {
   EncoderEvent,
   TouchSwipeEvent,
   SystemState,
+  ConnectionStatusEvent,
+  PageChangeEvent,
+  inputsMatch,
 } from "./types";
 import "./App.css";
 
@@ -24,24 +27,31 @@ export default function App() {
   const [selectedInput, setSelectedInput] = useState<InputRef | null>(null);
   const [selectedCapabilityId, setSelectedCapabilityId] = useState<string | null>(null);
   const [activeInputs, setActiveInputs] = useState<Set<string>>(new Set());
-  const [systemState, setSystemState] = useState<SystemState>({ is_muted: false, is_playing: false });
+  const [systemState, setSystemState] = useState<SystemState>({ is_muted: false, is_mic_muted: false, is_playing: false });
   const [error, setError] = useState<string | null>(null);
+  const [isConnected, setIsConnected] = useState<boolean>(true);
+  const [currentPage, setCurrentPage] = useState<number>(0);
+  const [pageCount, setPageCount] = useState<number>(1);
 
   // Load initial data
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [deviceInfo, bindingsList, capsList, state] = await Promise.all([
+        const [deviceInfo, bindingsList, capsList, state, page, pages] = await Promise.all([
           invoke<DeviceInfo | null>("get_device_info"),
           invoke<Binding[]>("get_bindings"),
           invoke<CapabilityInfo[]>("get_capabilities"),
           invoke<SystemState>("get_system_state"),
+          invoke<number>("get_current_page"),
+          invoke<number>("get_page_count"),
         ]);
 
         setDevice(deviceInfo);
         setBindings(bindingsList);
         setCapabilities(capsList);
         setSystemState(state);
+        setCurrentPage(page);
+        setPageCount(pages);
       } catch (e) {
         setError(`Failed to load: ${e}`);
       }
@@ -58,6 +68,46 @@ export default function App() {
 
     return () => {
       unlistenState.then((f) => f());
+    };
+  }, []);
+
+  // Listen for connection status changes
+  useEffect(() => {
+    const unlistenConnection = listen<ConnectionStatusEvent>(
+      "streamdeck:connection",
+      async (e) => {
+        setIsConnected(e.payload.connected);
+
+        if (e.payload.connected) {
+          // Device reconnected - refresh device info
+          try {
+            const deviceInfo = await invoke<DeviceInfo | null>("get_device_info");
+            setDevice(deviceInfo);
+            setError(null);
+          } catch (err) {
+            setError(`Failed to get device info: ${err}`);
+          }
+        } else {
+          // Device disconnected
+          setDevice(null);
+        }
+      }
+    );
+
+    return () => {
+      unlistenConnection.then((f) => f());
+    };
+  }, []);
+
+  // Listen for page changes
+  useEffect(() => {
+    const unlistenPage = listen<PageChangeEvent>("streamdeck:page", (e) => {
+      setCurrentPage(e.payload.page);
+      setPageCount(e.payload.page_count);
+    });
+
+    return () => {
+      unlistenPage.then((f) => f());
     };
   }, []);
 
@@ -135,24 +185,28 @@ export default function App() {
       label?: string,
       buttonImage?: string,
       buttonImageAlt?: string,
-      showLabel?: boolean
+      showLabel?: boolean,
+      page?: number
     ) => {
       try {
         const params = {
           input,
           capability,
+          page: page ?? currentPage,
           icon: icon ?? null,
           label: label ?? null,
           button_image: buttonImage ?? null,
           button_image_alt: buttonImageAlt ?? null,
           show_label: showLabel ?? null,
         };
-        console.log("handleSetBinding params:", params);
         await invoke("set_binding", { params });
-        // Refresh bindings
-        const updated = await invoke<Binding[]>("get_bindings");
-        console.log("Updated bindings:", updated);
+        // Refresh bindings and page count
+        const [updated, pages] = await Promise.all([
+          invoke<Binding[]>("get_bindings"),
+          invoke<number>("get_page_count"),
+        ]);
         setBindings(updated);
+        setPageCount(pages);
         // Auto-save to disk
         await invoke("save_bindings");
         setError(null);
@@ -160,23 +214,38 @@ export default function App() {
         setError(`Failed to set binding: ${e}`);
       }
     },
-    []
+    [currentPage]
   );
 
   // Handle removing a binding
-  const handleRemoveBinding = useCallback(async (input: InputRef) => {
+  const handleRemoveBinding = useCallback(async (input: InputRef, page?: number) => {
     try {
-      await invoke("remove_binding", { input });
-      // Refresh bindings
-      const updated = await invoke<Binding[]>("get_bindings");
+      const targetPage = page ?? currentPage;
+      await invoke("remove_binding", { input, page: targetPage });
+
+      // For encoders, also remove the paired binding (rotation <-> press)
+      if (input.type === "Encoder") {
+        const pressInput: InputRef = { type: "EncoderPress", index: input.index };
+        await invoke("remove_binding", { input: pressInput, page: targetPage });
+      } else if (input.type === "EncoderPress") {
+        const rotateInput: InputRef = { type: "Encoder", index: input.index };
+        await invoke("remove_binding", { input: rotateInput, page: targetPage });
+      }
+
+      // Refresh bindings and page count
+      const [updated, pages] = await Promise.all([
+        invoke<Binding[]>("get_bindings"),
+        invoke<number>("get_page_count"),
+      ]);
       setBindings(updated);
+      setPageCount(pages);
       // Auto-save to disk
       await invoke("save_bindings");
       setError(null);
     } catch (e) {
       setError(`Failed to remove binding: ${e}`);
     }
-  }, []);
+  }, [currentPage]);
 
   // Handle capability selection from browser (for click-to-assign flow)
   const handleCapabilitySelect = useCallback((capabilityId: string) => {
@@ -188,11 +257,29 @@ export default function App() {
         // Create default capability object based on type
         let capability: Capability;
         switch (capabilityId) {
-          case "SystemVolume":
-            capability = { type: "SystemVolume", step: 0.02 };
+          case "SystemAudio":
+            capability = { type: "SystemAudio", step: 0.02 };
             break;
-          case "ToggleMute":
-            capability = { type: "ToggleMute" };
+          case "Mute":
+            capability = { type: "Mute" };
+            break;
+          case "VolumeUp":
+            capability = { type: "VolumeUp", step: 0.05 };
+            break;
+          case "VolumeDown":
+            capability = { type: "VolumeDown", step: 0.05 };
+            break;
+          case "Microphone":
+            capability = { type: "Microphone", step: 0.02 };
+            break;
+          case "MicMute":
+            capability = { type: "MicMute" };
+            break;
+          case "MicVolumeUp":
+            capability = { type: "MicVolumeUp", step: 0.05 };
+            break;
+          case "MicVolumeDown":
+            capability = { type: "MicVolumeDown", step: 0.05 };
             break;
           case "MediaPlayPause":
             capability = { type: "MediaPlayPause" };
@@ -207,7 +294,7 @@ export default function App() {
             capability = { type: "MediaStop" };
             break;
           case "RunCommand":
-            capability = { type: "RunCommand", command: "" };
+            capability = { type: "RunCommand", command: "", toggle: false };
             break;
           case "LaunchApp":
             capability = { type: "LaunchApp", command: "" };
@@ -242,11 +329,29 @@ export default function App() {
     // Create default capability object
     let capability: Capability;
     switch (capabilityId) {
-      case "SystemVolume":
-        capability = { type: "SystemVolume", step: 0.02 };
+      case "SystemAudio":
+        capability = { type: "SystemAudio", step: 0.02 };
         break;
-      case "ToggleMute":
-        capability = { type: "ToggleMute" };
+      case "Mute":
+        capability = { type: "Mute" };
+        break;
+      case "VolumeUp":
+        capability = { type: "VolumeUp", step: 0.05 };
+        break;
+      case "VolumeDown":
+        capability = { type: "VolumeDown", step: 0.05 };
+        break;
+      case "Microphone":
+        capability = { type: "Microphone", step: 0.02 };
+        break;
+      case "MicMute":
+        capability = { type: "MicMute" };
+        break;
+      case "MicVolumeUp":
+        capability = { type: "MicVolumeUp", step: 0.05 };
+        break;
+      case "MicVolumeDown":
+        capability = { type: "MicVolumeDown", step: 0.05 };
         break;
       case "MediaPlayPause":
         capability = { type: "MediaPlayPause" };
@@ -280,7 +385,70 @@ export default function App() {
     setSelectedInput(input);
   }, [capabilities, handleSetBinding]);
 
-  if (error && !device) {
+  // Handle copying a binding from one input to another
+  const handleCopyBinding = useCallback((fromInput: InputRef, toInput: InputRef) => {
+    // Find the source binding on current page
+    const sourceBinding = bindings.find(
+      (b) => inputsMatch(b.input, fromInput) && b.page === currentPage
+    );
+    if (!sourceBinding) return;
+
+    // Copy the binding to the new input
+    handleSetBinding(
+      toInput,
+      sourceBinding.capability,
+      sourceBinding.icon,
+      sourceBinding.label,
+      sourceBinding.button_image,
+      sourceBinding.button_image_alt,
+      sourceBinding.show_label
+    );
+
+    // For encoders, also copy the paired binding (rotation <-> press)
+    if (fromInput.type === "Encoder" && toInput.type === "Encoder") {
+      // Also copy the EncoderPress binding if it exists
+      const pressBinding = bindings.find(
+        (b) => b.input.type === "EncoderPress" &&
+               (b.input as { index: number }).index === fromInput.index &&
+               b.page === currentPage
+      );
+      if (pressBinding) {
+        const toPressInput: InputRef = { type: "EncoderPress", index: toInput.index };
+        handleSetBinding(
+          toPressInput,
+          pressBinding.capability,
+          pressBinding.icon,
+          pressBinding.label,
+          pressBinding.button_image,
+          pressBinding.button_image_alt,
+          pressBinding.show_label
+        );
+      }
+    } else if (fromInput.type === "EncoderPress" && toInput.type === "EncoderPress") {
+      // Also copy the Encoder (rotation) binding if it exists
+      const rotateBinding = bindings.find(
+        (b) => b.input.type === "Encoder" &&
+               (b.input as { index: number }).index === (fromInput as { type: "EncoderPress"; index: number }).index &&
+               b.page === currentPage
+      );
+      if (rotateBinding) {
+        const toRotateInput: InputRef = { type: "Encoder", index: (toInput as { type: "EncoderPress"; index: number }).index };
+        handleSetBinding(
+          toRotateInput,
+          rotateBinding.capability,
+          rotateBinding.icon,
+          rotateBinding.label,
+          rotateBinding.button_image,
+          rotateBinding.button_image_alt,
+          rotateBinding.show_label
+        );
+      }
+    }
+
+    setSelectedInput(toInput);
+  }, [bindings, currentPage, handleSetBinding]);
+
+  if (error && !device && !isConnected) {
     return (
       <div className="app error-state">
         <h1>ArchDeck</h1>
@@ -294,7 +462,10 @@ export default function App() {
     return (
       <div className="app loading-state">
         <h1>ArchDeck</h1>
-        <p>Connecting to Stream Deck...</p>
+        <p>{isConnected ? "Connecting to Stream Deck..." : "Waiting for Stream Deck..."}</p>
+        {!isConnected && (
+          <p className="hint-text">Connect your Stream Deck to continue</p>
+        )}
       </div>
     );
   }
@@ -320,14 +491,18 @@ export default function App() {
           selectedInput={selectedInput}
           activeInputs={activeInputs}
           systemState={systemState}
+          currentPage={currentPage}
+          pageCount={pageCount}
           onSelectInput={setSelectedInput}
           onDrop={handleDrop}
+          onCopyBinding={handleCopyBinding}
         />
 
         <BindingEditor
           selectedInput={selectedInput}
           bindings={bindings}
           capabilities={capabilities}
+          currentPage={currentPage}
           onSetBinding={handleSetBinding}
           onRemoveBinding={handleRemoveBinding}
         />

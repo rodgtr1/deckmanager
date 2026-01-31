@@ -19,6 +19,9 @@ pub enum InputRef {
 pub struct Binding {
     pub input: InputRef,
     pub capability: Capability,
+    /// Which page this binding belongs to (0-indexed)
+    #[serde(default)]
+    pub page: usize,
     /// Custom emoji or icon name for this binding (UI only)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
