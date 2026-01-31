@@ -108,14 +108,7 @@ export default function BindingEditor({
       }
       if (currentBinding.capability.type === "ElgatoKeyLight") {
         setKeyLightIp(currentBinding.capability.ip);
-        // Map the capability to the right UI ID
-        const actionMap: Record<string, string> = {
-          Toggle: "ElgatoKeyLightToggle",
-          On: "ElgatoKeyLightToggle",
-          Off: "ElgatoKeyLightToggle",
-          SetBrightness: "ElgatoKeyLightBrightness",
-        };
-        setSelectedCapabilityId(actionMap[currentBinding.capability.action] || "ElgatoKeyLightToggle");
+        setSelectedCapabilityId("ElgatoKeyLight");
       }
     } else {
       setSelectedCapabilityId("");
@@ -179,13 +172,10 @@ export default function BindingEditor({
         if (!url.trim() || url === "https://") return;
         capability = { type: "OpenURL", url: url.trim() };
         break;
-      case "ElgatoKeyLightToggle":
+      case "ElgatoKeyLight":
         if (!keyLightIp.trim()) return;
+        // Combined capability - action determined by input type at runtime
         capability = { type: "ElgatoKeyLight", ip: keyLightIp.trim(), port: 9123, action: "Toggle" };
-        break;
-      case "ElgatoKeyLightBrightness":
-        if (!keyLightIp.trim()) return;
-        capability = { type: "ElgatoKeyLight", ip: keyLightIp.trim(), port: 9123, action: "SetBrightness" };
         break;
       default:
         return;
@@ -201,6 +191,19 @@ export default function BindingEditor({
 
     console.log("handleSave:", { icon, label, image, imageAlt, showLabelOnButton, customLabel });
     onSetBinding(selectedInput, capability, icon, label, image, imageAlt, showLabelOnButton);
+
+    // For Key Light on encoders, automatically create both rotation and press bindings
+    if (selectedCapabilityId === "ElgatoKeyLight" && selectedInput) {
+      if (selectedInput.type === "Encoder") {
+        // Also create EncoderPress binding for toggle
+        const pressInput: InputRef = { type: "EncoderPress", index: selectedInput.index };
+        onSetBinding(pressInput, capability, icon, label, image, imageAlt, showLabelOnButton);
+      } else if (selectedInput.type === "EncoderPress") {
+        // Also create Encoder binding for brightness
+        const rotateInput: InputRef = { type: "Encoder", index: selectedInput.index };
+        onSetBinding(rotateInput, capability, icon, label, image, imageAlt, showLabelOnButton);
+      }
+    }
   };
 
   const handleRemove = () => {
@@ -242,12 +245,10 @@ export default function BindingEditor({
   const supportsStateImages =
     selectedCapabilityId === "ToggleMute" ||
     selectedCapabilityId === "MediaPlayPause" ||
-    selectedCapabilityId === "ElgatoKeyLightToggle";
+    selectedCapabilityId === "ElgatoKeyLight";
 
   // Check if this is a Key Light capability
-  const isKeyLightCapability =
-    selectedCapabilityId === "ElgatoKeyLightToggle" ||
-    selectedCapabilityId === "ElgatoKeyLightBrightness";
+  const isKeyLightCapability = selectedCapabilityId === "ElgatoKeyLight";
 
   // Get description for alternate image based on capability
   const getAltImageDescription = (): string => {
@@ -257,7 +258,7 @@ export default function BindingEditor({
     if (selectedCapabilityId === "MediaPlayPause") {
       return "Image shown when media is playing";
     }
-    if (selectedCapabilityId === "ElgatoKeyLightToggle") {
+    if (selectedCapabilityId === "ElgatoKeyLight") {
       return "Image shown when light is on";
     }
     return "Alternate state image";
@@ -271,7 +272,7 @@ export default function BindingEditor({
     if (selectedCapabilityId === "MediaPlayPause") {
       return "Playing Image";
     }
-    if (selectedCapabilityId === "ElgatoKeyLightToggle") {
+    if (selectedCapabilityId === "ElgatoKeyLight") {
       return "Light On Image";
     }
     return "Alternate Image";

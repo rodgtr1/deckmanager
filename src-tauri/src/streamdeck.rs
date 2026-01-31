@@ -110,21 +110,21 @@ pub fn run(
             StreamDeckInput::ButtonStateChange(states) => {
                 for event in processor.process_buttons(&states) {
                     emit_event(&app, event.clone());
-                    handle_logical_event(event, &bindings);
+                    handle_logical_event(event, &bindings, &system_state);
                 }
             }
 
             StreamDeckInput::EncoderTwist(deltas) => {
                 for event in processor.process_encoders(&deltas) {
                     emit_event(&app, event.clone());
-                    handle_logical_event(event, &bindings);
+                    handle_logical_event(event, &bindings, &system_state);
                 }
             }
 
             StreamDeckInput::TouchScreenSwipe(start, end) => {
                 let event = processor.process_swipe(start, end);
                 emit_event(&app, event.clone());
-                handle_logical_event(event, &bindings);
+                handle_logical_event(event, &bindings, &system_state);
             }
 
             StreamDeckInput::EncoderStateChange(states) => {
@@ -133,7 +133,7 @@ pub fn run(
 
                 for event in processor.process_encoder_presses(&states) {
                     emit_event(&app, event.clone());
-                    handle_logical_event(event, &bindings);
+                    handle_logical_event(event, &bindings, &system_state);
                 }
             }
 
@@ -356,7 +356,7 @@ fn sync_lcd_images(
     }
 }
 
-fn handle_logical_event(event: LogicalEvent, bindings: &[Binding]) {
+fn handle_logical_event(event: LogicalEvent, bindings: &[Binding], system_state: &Arc<Mutex<SystemState>>) {
     for binding in bindings {
         if !binding.matches(&event) {
             continue;
@@ -437,19 +437,19 @@ fn handle_logical_event(event: LogicalEvent, bindings: &[Binding]) {
             }
 
             // Elgato Key Light controls
-            (Capability::ElgatoKeyLight { ip, port, action }, LogicalEvent::Button(e)) if e.pressed => {
-                handle_key_light_button(ip, *port, action);
-                state_manager::request_state_check();
+            // Button press -> toggle
+            (Capability::ElgatoKeyLight { ip, port, .. }, LogicalEvent::Button(e)) if e.pressed => {
+                handle_key_light_button(ip, *port, &KeyLightAction::Toggle, system_state);
             }
 
-            (Capability::ElgatoKeyLight { ip, port, action }, LogicalEvent::EncoderPress(e)) if e.pressed => {
-                handle_key_light_button(ip, *port, action);
-                state_manager::request_state_check();
+            // Encoder press -> toggle
+            (Capability::ElgatoKeyLight { ip, port, .. }, LogicalEvent::EncoderPress(e)) if e.pressed => {
+                handle_key_light_button(ip, *port, &KeyLightAction::Toggle, system_state);
             }
 
-            (Capability::ElgatoKeyLight { ip, port, action: KeyLightAction::SetBrightness }, LogicalEvent::Encoder(e)) => {
-                handle_key_light_brightness(ip, *port, e.delta);
-                state_manager::request_state_check();
+            // Encoder rotation -> brightness
+            (Capability::ElgatoKeyLight { ip, port, .. }, LogicalEvent::Encoder(e)) => {
+                handle_key_light_brightness(ip, *port, e.delta, system_state);
             }
 
             _ => {}
@@ -457,7 +457,7 @@ fn handle_logical_event(event: LogicalEvent, bindings: &[Binding]) {
     }
 }
 
-fn handle_key_light_button(ip: &str, port: u16, action: &KeyLightAction) {
+fn handle_key_light_button(ip: &str, port: u16, action: &KeyLightAction, system_state: &Arc<Mutex<SystemState>>) {
     let result = match action {
         KeyLightAction::Toggle => elgato_key_light::toggle(ip, port).map(|_| ()),
         KeyLightAction::On => elgato_key_light::turn_on(ip, port),
@@ -468,13 +468,32 @@ fn handle_key_light_button(ip: &str, port: u16, action: &KeyLightAction) {
     if let Err(e) = result {
         eprintln!("Key Light error: {e}");
     }
+
+    // Update key light state and trigger image sync
+    update_key_light_state_and_sync(ip, port, system_state);
 }
 
-fn handle_key_light_brightness(ip: &str, port: u16, delta: i8) {
-    let brightness_delta = delta as i32 * 5; // 5% per tick
+fn handle_key_light_brightness(ip: &str, port: u16, delta: i8, system_state: &Arc<Mutex<SystemState>>) {
+    let brightness_delta = delta as i32 * 2; // 2% per tick
     if let Err(e) = elgato_key_light::adjust_brightness(ip, port, brightness_delta) {
         eprintln!("Key Light brightness error: {e}");
     }
+
+    // Update key light state and trigger image sync
+    update_key_light_state_and_sync(ip, port, system_state);
+}
+
+fn update_key_light_state_and_sync(ip: &str, port: u16, system_state: &Arc<Mutex<SystemState>>) {
+    // Fetch current key light state
+    if let Ok(light_state) = elgato_key_light::get_state(ip, port) {
+        if let Ok(mut state) = system_state.lock() {
+            let key = format!("{}:{}", ip, port);
+            state.key_lights.insert(key, light_state);
+        }
+    }
+
+    // Request image sync to update hardware display
+    request_image_sync();
 }
 
 fn get_current_volume() -> Option<f32> {

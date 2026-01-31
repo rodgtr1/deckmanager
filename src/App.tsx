@@ -215,11 +215,8 @@ export default function App() {
           case "OpenURL":
             capability = { type: "OpenURL", url: "https://" };
             break;
-          case "ElgatoKeyLightToggle":
+          case "ElgatoKeyLight":
             capability = { type: "ElgatoKeyLight", ip: "192.168.1.100", port: 9123, action: "Toggle" };
-            break;
-          case "ElgatoKeyLightBrightness":
-            capability = { type: "ElgatoKeyLight", ip: "192.168.1.100", port: 9123, action: "SetBrightness" };
             break;
           default:
             return;
@@ -272,11 +269,8 @@ export default function App() {
       case "OpenURL":
         capability = { type: "OpenURL", url: "https://" };
         break;
-      case "ElgatoKeyLightToggle":
+      case "ElgatoKeyLight":
         capability = { type: "ElgatoKeyLight", ip: "192.168.1.100", port: 9123, action: "Toggle" };
-        break;
-      case "ElgatoKeyLightBrightness":
-        capability = { type: "ElgatoKeyLight", ip: "192.168.1.100", port: 9123, action: "SetBrightness" };
         break;
       default:
         return;

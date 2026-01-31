@@ -71,7 +71,7 @@ impl Capability {
                     Some(CapabilityEffect::KeyLightBrightness {
                         ip: ip.clone(),
                         port: *port,
-                        delta: delta as i32 * 5, // 5% per tick
+                        delta: delta as i32 * 2, // 2% per tick
                     })
                 }
             }
