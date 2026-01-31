@@ -171,6 +171,11 @@ To disable autostart:
 - Check logs: `journalctl --user -u archdeck -f`
 - Ensure Wayland/X11 session is active
 
+**Blank window or display glitches (Wayland):**
+- Run with X11 backend: `GDK_BACKEND=x11 archdeck`
+- Or disable WebKit compositing: `WEBKIT_DISABLE_COMPOSITING_MODE=1 archdeck`
+- For systemd service, edit `~/.config/systemd/user/archdeck.service` and uncomment the environment lines
+
 **Media controls not working:**
 - Install `playerctl`
 - Verify a media player is running: `playerctl status`
