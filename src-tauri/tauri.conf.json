@@ -19,10 +19,15 @@
       }
     ],
     "security": {
-      "csp": null,
+      "csp": "default-src 'self'; img-src 'self' asset: https: data:; style-src 'self' 'unsafe-inline'",
       "assetProtocol": {
         "enable": true,
-        "scope": ["$HOME/**", "$DOWNLOAD/**", "/tmp/**", "**"]
+        "scope": [
+          "$HOME/.config/archdeck/**",
+          "$HOME/Pictures/**",
+          "$HOME/Downloads/**",
+          "/tmp/archdeck/**"
+        ]
       }
     }
   },

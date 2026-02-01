@@ -6,15 +6,22 @@ mod button_renderer;
 mod capability;
 mod commands;
 mod config;
+mod core;
 mod device;
-mod elgato_key_light;
 mod events;
 mod hid;
 mod image_cache;
 mod input_processor;
-mod key_light_controller;
+mod plugin;
+mod plugins;
 mod state_manager;
 mod streamdeck;
+
+// Re-export for backwards compatibility
+#[cfg(feature = "plugin-elgato")]
+pub use plugins::elgato::client as elgato_key_light;
+#[cfg(feature = "plugin-elgato")]
+pub use plugins::elgato::controller as key_light_controller;
 
 // Include generated constants from build.rs
 pub mod app_constants {
@@ -22,14 +29,51 @@ pub mod app_constants {
 }
 
 use commands::AppState;
+use plugin::PluginRegistry;
 
 /// Run the application with optional hidden mode
 pub fn run() {
     run_with_options(false);
 }
 
+/// Initialize the plugin registry with all available plugins.
+fn create_plugin_registry() -> Arc<PluginRegistry> {
+    use plugin::PluginConfig;
+
+    let registry = PluginRegistry::new();
+
+    // Load persisted plugin states
+    let plugin_states = config::load_plugin_states();
+
+    // Helper to create config with persisted enabled state
+    let make_config = |plugin_id: &str, default_enabled: bool| -> PluginConfig {
+        PluginConfig {
+            enabled: *plugin_states.get(plugin_id).unwrap_or(&default_enabled),
+            settings: std::collections::HashMap::new(),
+        }
+    };
+
+    // Register core plugin (always available, always enabled)
+    registry.register(
+        Box::new(core::CorePlugin::new()),
+        Some(&PluginConfig { enabled: true, settings: std::collections::HashMap::new() }),
+    );
+
+    // Register optional plugins based on feature flags
+    #[cfg(feature = "plugin-elgato")]
+    registry.register(
+        Box::new(plugins::elgato::ElgatoPlugin::new()),
+        Some(&make_config("elgato", true)),
+    );
+
+    Arc::new(registry)
+}
+
 /// Run the application, optionally starting hidden (no window shown)
 pub fn run_with_options(start_hidden: bool) {
+    // Initialize plugin registry
+    let plugin_registry = create_plugin_registry();
+
     // Shared state for device info and bindings
     let device_info = Arc::new(Mutex::new(None));
     let bindings = Arc::new(Mutex::new(
@@ -43,6 +87,7 @@ pub fn run_with_options(start_hidden: bool) {
     let bindings_clone = Arc::clone(&bindings);
     let system_state_clone = Arc::clone(&system_state);
     let current_page_clone = Arc::clone(&current_page);
+    let registry_clone = Arc::clone(&plugin_registry);
 
     // Clone for the state poller thread
     let system_state_poller = Arc::clone(&system_state);
@@ -55,6 +100,7 @@ pub fn run_with_options(start_hidden: bool) {
             bindings: Arc::clone(&bindings),
             system_state: Arc::clone(&system_state),
             current_page: Arc::clone(&current_page),
+            plugin_registry: Arc::clone(&plugin_registry),
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_device_info,
@@ -68,6 +114,8 @@ pub fn run_with_options(start_hidden: bool) {
             commands::get_current_page,
             commands::set_current_page,
             commands::get_page_count,
+            commands::get_plugins,
+            commands::set_plugin_enabled,
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -88,6 +136,7 @@ pub fn run_with_options(start_hidden: bool) {
                     bindings_clone,
                     system_state_clone,
                     current_page_clone,
+                    registry_clone,
                 ) {
                     eprintln!("Stream Deck error: {:?}", e);
                 }

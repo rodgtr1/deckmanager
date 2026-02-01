@@ -2,6 +2,7 @@ use crate::binding::{Binding, InputRef};
 use crate::capability::Capability;
 use crate::config;
 use crate::device::DeviceInfo;
+use crate::plugin::{PluginInfo, PluginRegistry};
 use crate::state_manager::{self, SystemState};
 use crate::streamdeck;
 use serde::{Deserialize, Serialize};
@@ -14,6 +15,7 @@ pub struct AppState {
     pub bindings: Arc<Mutex<Vec<Binding>>>,
     pub system_state: Arc<Mutex<SystemState>>,
     pub current_page: Arc<Mutex<usize>>,
+    pub plugin_registry: Arc<PluginRegistry>,
 }
 
 /// Information about an available capability for the frontend.
@@ -50,213 +52,10 @@ pub fn get_bindings(state: State<AppState>) -> Vec<Binding> {
     state.bindings.lock().ok().map(|b| b.clone()).unwrap_or_default()
 }
 
-/// Get available capabilities.
+/// Get available capabilities from all enabled plugins.
 #[tauri::command]
-pub fn get_capabilities() -> Vec<CapabilityInfo> {
-    vec![
-        CapabilityInfo {
-            id: "SystemAudio".to_string(),
-            name: "System Audio".to_string(),
-            description: "Full audio control for encoders. Rotation: volume, Press: mute toggle".to_string(),
-            supports_button: false,
-            supports_encoder: true,
-            supports_encoder_press: true,
-            parameters: vec![CapabilityParameter {
-                name: "step".to_string(),
-                param_type: "f32".to_string(),
-                default_value: "0.02".to_string(),
-                description: "Volume change per encoder tick (0.0-1.0)".to_string(),
-            }],
-        },
-        CapabilityInfo {
-            id: "Mute".to_string(),
-            name: "Mute".to_string(),
-            description: "Toggle system audio mute on/off".to_string(),
-            supports_button: true,
-            supports_encoder: false,
-            supports_encoder_press: true,
-            parameters: vec![],
-        },
-        CapabilityInfo {
-            id: "VolumeUp".to_string(),
-            name: "Volume Up".to_string(),
-            description: "Increase system volume".to_string(),
-            supports_button: true,
-            supports_encoder: false,
-            supports_encoder_press: true,
-            parameters: vec![CapabilityParameter {
-                name: "step".to_string(),
-                param_type: "f32".to_string(),
-                default_value: "0.05".to_string(),
-                description: "Volume increase per press (0.0-1.0)".to_string(),
-            }],
-        },
-        CapabilityInfo {
-            id: "VolumeDown".to_string(),
-            name: "Volume Down".to_string(),
-            description: "Decrease system volume".to_string(),
-            supports_button: true,
-            supports_encoder: false,
-            supports_encoder_press: true,
-            parameters: vec![CapabilityParameter {
-                name: "step".to_string(),
-                param_type: "f32".to_string(),
-                default_value: "0.05".to_string(),
-                description: "Volume decrease per press (0.0-1.0)".to_string(),
-            }],
-        },
-        CapabilityInfo {
-            id: "Microphone".to_string(),
-            name: "Microphone".to_string(),
-            description: "Full mic control for encoders. Rotation: volume, Press: mute toggle".to_string(),
-            supports_button: false,
-            supports_encoder: true,
-            supports_encoder_press: true,
-            parameters: vec![CapabilityParameter {
-                name: "step".to_string(),
-                param_type: "f32".to_string(),
-                default_value: "0.02".to_string(),
-                description: "Volume change per encoder tick (0.0-1.0)".to_string(),
-            }],
-        },
-        CapabilityInfo {
-            id: "MicMute".to_string(),
-            name: "Mic Mute".to_string(),
-            description: "Toggle microphone mute on/off".to_string(),
-            supports_button: true,
-            supports_encoder: false,
-            supports_encoder_press: true,
-            parameters: vec![],
-        },
-        CapabilityInfo {
-            id: "MicVolumeUp".to_string(),
-            name: "Mic Volume Up".to_string(),
-            description: "Increase microphone volume".to_string(),
-            supports_button: true,
-            supports_encoder: false,
-            supports_encoder_press: true,
-            parameters: vec![CapabilityParameter {
-                name: "step".to_string(),
-                param_type: "f32".to_string(),
-                default_value: "0.05".to_string(),
-                description: "Volume increase per press (0.0-1.0)".to_string(),
-            }],
-        },
-        CapabilityInfo {
-            id: "MicVolumeDown".to_string(),
-            name: "Mic Volume Down".to_string(),
-            description: "Decrease microphone volume".to_string(),
-            supports_button: true,
-            supports_encoder: false,
-            supports_encoder_press: true,
-            parameters: vec![CapabilityParameter {
-                name: "step".to_string(),
-                param_type: "f32".to_string(),
-                default_value: "0.05".to_string(),
-                description: "Volume decrease per press (0.0-1.0)".to_string(),
-            }],
-        },
-        CapabilityInfo {
-            id: "MediaPlayPause".to_string(),
-            name: "Play/Pause".to_string(),
-            description: "Toggle media playback".to_string(),
-            supports_button: true,
-            supports_encoder: false,
-            supports_encoder_press: true,
-            parameters: vec![],
-        },
-        CapabilityInfo {
-            id: "MediaNext".to_string(),
-            name: "Next Track".to_string(),
-            description: "Skip to next track".to_string(),
-            supports_button: true,
-            supports_encoder: false,
-            supports_encoder_press: true,
-            parameters: vec![],
-        },
-        CapabilityInfo {
-            id: "MediaPrevious".to_string(),
-            name: "Previous Track".to_string(),
-            description: "Go to previous track".to_string(),
-            supports_button: true,
-            supports_encoder: false,
-            supports_encoder_press: true,
-            parameters: vec![],
-        },
-        CapabilityInfo {
-            id: "MediaStop".to_string(),
-            name: "Stop".to_string(),
-            description: "Stop media playback".to_string(),
-            supports_button: true,
-            supports_encoder: false,
-            supports_encoder_press: true,
-            parameters: vec![],
-        },
-        CapabilityInfo {
-            id: "RunCommand".to_string(),
-            name: "Run Command".to_string(),
-            description: "Execute a shell command. Enable toggle mode for commands that flip between states (e.g., start/stop dictation)".to_string(),
-            supports_button: true,
-            supports_encoder: false,
-            supports_encoder_press: true,
-            parameters: vec![
-                CapabilityParameter {
-                    name: "command".to_string(),
-                    param_type: "string".to_string(),
-                    default_value: "".to_string(),
-                    description: "Shell command to execute".to_string(),
-                },
-                CapabilityParameter {
-                    name: "toggle".to_string(),
-                    param_type: "bool".to_string(),
-                    default_value: "false".to_string(),
-                    description: "Toggle mode: alternate between default and active image on each press".to_string(),
-                },
-            ],
-        },
-        CapabilityInfo {
-            id: "LaunchApp".to_string(),
-            name: "Launch App".to_string(),
-            description: "Launch an application".to_string(),
-            supports_button: true,
-            supports_encoder: false,
-            supports_encoder_press: true,
-            parameters: vec![CapabilityParameter {
-                name: "command".to_string(),
-                param_type: "string".to_string(),
-                default_value: "".to_string(),
-                description: "Application to launch (e.g., firefox, code)".to_string(),
-            }],
-        },
-        CapabilityInfo {
-            id: "OpenURL".to_string(),
-            name: "Open URL".to_string(),
-            description: "Open a URL in your default browser".to_string(),
-            supports_button: true,
-            supports_encoder: false,
-            supports_encoder_press: true,
-            parameters: vec![CapabilityParameter {
-                name: "url".to_string(),
-                param_type: "string".to_string(),
-                default_value: "https://".to_string(),
-                description: "URL to open".to_string(),
-            }],
-        },
-        CapabilityInfo {
-            id: "ElgatoKeyLight".to_string(),
-            name: "Key Light".to_string(),
-            description: "Control Elgato Key Light - rotate for brightness, press to toggle".to_string(),
-            supports_button: true,
-            supports_encoder: true,
-            supports_encoder_press: true,
-            parameters: vec![CapabilityParameter {
-                name: "ip".to_string(),
-                param_type: "string".to_string(),
-                default_value: "192.168.1.100".to_string(),
-                description: "IP address of the Key Light".to_string(),
-            }],
-        },
-    ]
+pub fn get_capabilities(state: State<AppState>) -> Vec<CapabilityInfo> {
+    state.plugin_registry.get_capability_infos()
 }
 
 /// Parameters for set_binding command - using a struct ensures proper deserialization
@@ -395,6 +194,43 @@ fn inputs_match(a: &InputRef, b: &InputRef) -> bool {
     }
 }
 
+/// Get information about all plugins.
+#[tauri::command]
+pub fn get_plugins(state: State<AppState>) -> Vec<PluginInfo> {
+    state.plugin_registry.get_plugins()
+}
+
+/// Enable or disable a plugin.
+#[tauri::command]
+pub fn set_plugin_enabled(
+    state: State<AppState>,
+    plugin_id: String,
+    enabled: bool,
+) -> Result<(), String> {
+    // Check if plugin is core (cannot be disabled)
+    let plugins = state.plugin_registry.get_plugins();
+    if let Some(plugin) = plugins.iter().find(|p| p.id == plugin_id) {
+        if plugin.is_core && !enabled {
+            return Err("Core plugins cannot be disabled".to_string());
+        }
+    } else {
+        return Err(format!("Plugin '{}' not found", plugin_id));
+    }
+
+    // Update the enabled state in the registry
+    if !state.plugin_registry.set_plugin_enabled(&plugin_id, enabled) {
+        return Err(format!("Failed to update plugin '{}' state", plugin_id));
+    }
+
+    // Persist the state to disk
+    if let Err(e) = config::save_plugin_state(&plugin_id, enabled) {
+        eprintln!("Failed to persist plugin state: {}", e);
+        // Don't fail the command, state is still updated in memory
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -420,18 +256,4 @@ mod tests {
         assert!(!inputs_match(&a, &b));
     }
 
-    #[test]
-    fn capabilities_list_not_empty() {
-        let caps = get_capabilities();
-        assert!(!caps.is_empty());
-        assert!(caps.iter().any(|c| c.id == "SystemAudio"));
-        assert!(caps.iter().any(|c| c.id == "Microphone"));
-        assert!(caps.iter().any(|c| c.id == "MediaPlayPause"));
-        assert!(caps.iter().any(|c| c.id == "MediaNext"));
-        assert!(caps.iter().any(|c| c.id == "MediaPrevious"));
-        assert!(caps.iter().any(|c| c.id == "MediaStop"));
-        assert!(caps.iter().any(|c| c.id == "RunCommand"));
-        assert!(caps.iter().any(|c| c.id == "LaunchApp"));
-        assert!(caps.iter().any(|c| c.id == "OpenURL"));
-    }
 }

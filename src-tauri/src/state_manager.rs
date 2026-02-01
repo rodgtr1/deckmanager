@@ -2,7 +2,17 @@
 //!
 //! Polls system state every 2 seconds and emits events when state changes.
 
-use crate::elgato_key_light::{self, KeyLightState};
+#[cfg(feature = "plugin-elgato")]
+use crate::plugins::elgato::client::{self as elgato_key_light, KeyLightState};
+#[cfg(not(feature = "plugin-elgato"))]
+use serde::{Deserialize, Serialize};
+#[cfg(not(feature = "plugin-elgato"))]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KeyLightState {
+    pub on: bool,
+    pub brightness: u8,
+    pub temperature: u16,
+}
 use std::collections::HashMap;
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -92,8 +102,15 @@ pub fn get_current_state() -> SystemState {
 /// Check key light state for a specific light
 /// (Reserved for future key light state polling)
 #[allow(dead_code)]
+#[cfg(feature = "plugin-elgato")]
 pub fn check_key_light_state(ip: &str, port: u16) -> Option<KeyLightState> {
     elgato_key_light::get_state(ip, port).ok()
+}
+
+#[allow(dead_code)]
+#[cfg(not(feature = "plugin-elgato"))]
+pub fn check_key_light_state(_ip: &str, _port: u16) -> Option<KeyLightState> {
+    None
 }
 
 /// State change event emitted to frontend

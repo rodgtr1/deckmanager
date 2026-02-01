@@ -10,9 +10,10 @@
     {
       "identifier": "fs:allow-read",
       "allow": [
-        { "path": "$HOME/**" },
-        { "path": "$DOWNLOAD/**" },
-        { "path": "/tmp/**" }
+        { "path": "$HOME/.config/archdeck/**" },
+        { "path": "$HOME/Pictures/**" },
+        { "path": "$HOME/Downloads/**" },
+        { "path": "/tmp/archdeck/**" }
       ]
     },
     "fs:default"

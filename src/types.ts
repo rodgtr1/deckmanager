@@ -74,6 +74,20 @@ export interface CapabilityInfo {
   parameters: CapabilityParameter[];
 }
 
+// Plugin metadata for plugins page
+export interface PluginInfo {
+  id: string;
+  name: string;
+  category: string;
+  enabled: boolean;
+  capability_count: number;
+  version: string;
+  description: string;
+  documentation: string;
+  icon: string;
+  is_core: boolean;
+}
+
 // Event types from Stream Deck
 export interface ButtonEvent {
   index: number;

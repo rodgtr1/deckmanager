@@ -3,7 +3,7 @@
 //! Accumulates encoder deltas and sends a single HTTP request after a debounce window,
 //! preventing lag when turning the encoder quickly.
 
-use crate::elgato_key_light::{self, KeyLightState};
+use super::client::{self, KeyLightState};
 use crate::streamdeck::request_image_sync;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -211,7 +211,7 @@ fn apply_brightness_delta(
         (Some(b), Some(on)) => (b, on),
         _ => {
             // Need to fetch current state
-            match elgato_key_light::get_state(ip, port) {
+            match client::get_state(ip, port) {
                 Ok(state) => (state.brightness, state.on),
                 Err(_) => return Err(()),
             }
@@ -226,7 +226,7 @@ fn apply_brightness_delta(
     let final_on = should_be_on && new_brightness > 0;
 
     // Send the update
-    if elgato_key_light::set_state(ip, port, final_on, new_brightness).is_err() {
+    if client::set_state(ip, port, final_on, new_brightness).is_err() {
         return Err(());
     }
 

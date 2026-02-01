@@ -179,3 +179,16 @@ To disable autostart:
 **Media controls not working:**
 - Install `playerctl`
 - Verify a media player is running: `playerctl status`
+
+## Security Considerations
+
+ArchDeck is designed for power users who want full control over their Stream Deck. Please be aware of the following:
+
+**Shell Command Execution:** The "Run Command" action executes arbitrary shell commands. This is intentional - it allows you to trigger any script or program from your Stream Deck. However, this means:
+- Only use button configurations (`~/.config/archdeck/bindings.toml`) that you trust
+- Review any `bindings.toml` files before importing them from others
+- Treat shared configurations like you would treat shared shell scripts
+
+**Hardware Access:** ArchDeck requires udev rules to communicate with your Stream Deck over USB. The included rules grant access to Elgato devices for users in the `plugdev` group.
+
+**File Access:** The app can read images from `~/Pictures`, `~/Downloads`, and `~/.config/archdeck` for button icons. It cannot access files outside these directories.

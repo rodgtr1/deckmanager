@@ -1,9 +1,11 @@
 import { useEffect, useState, useCallback } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
+import ActivityBar, { ViewType } from "./components/ActivityBar";
 import CapabilityBrowser from "./components/CapabilityBrowser";
 import DeviceLayout from "./components/DeviceLayout";
 import BindingEditor from "./components/BindingEditor";
+import PluginsPage from "./components/PluginsPage";
 import {
   DeviceInfo,
   InputRef,
@@ -33,6 +35,17 @@ export default function App() {
   const [isConnected, setIsConnected] = useState<boolean>(true);
   const [currentPage, setCurrentPage] = useState<number>(0);
   const [pageCount, setPageCount] = useState<number>(1);
+  const [currentView, setCurrentView] = useState<ViewType>("device");
+
+  // Refresh capabilities (called when plugins are toggled)
+  const refreshCapabilities = useCallback(async () => {
+    try {
+      const capsList = await invoke<CapabilityInfo[]>("get_capabilities");
+      setCapabilities(capsList);
+    } catch (e) {
+      console.error("Failed to refresh capabilities:", e);
+    }
+  }, []);
 
   // Load initial data
   useEffect(() => {
@@ -377,35 +390,43 @@ export default function App() {
 
       {error && <div className="error-banner">{error}</div>}
 
-      <main className="app-main three-column">
-        <CapabilityBrowser
-          capabilities={capabilities}
-          onSelect={handleCapabilitySelect}
-          selectedCapabilityId={selectedCapabilityId}
-        />
+      <div className="app-container">
+        <ActivityBar currentView={currentView} onViewChange={setCurrentView} />
 
-        <DeviceLayout
-          device={device}
-          bindings={bindings}
-          selectedInput={selectedInput}
-          activeInputs={activeInputs}
-          systemState={systemState}
-          currentPage={currentPage}
-          pageCount={pageCount}
-          onSelectInput={setSelectedInput}
-          onDrop={handleDrop}
-          onCopyBinding={handleCopyBinding}
-        />
+        {currentView === "device" ? (
+          <main className="app-main three-column">
+            <CapabilityBrowser
+              capabilities={capabilities}
+              onSelect={handleCapabilitySelect}
+              selectedCapabilityId={selectedCapabilityId}
+            />
 
-        <BindingEditor
-          selectedInput={selectedInput}
-          bindings={bindings}
-          capabilities={capabilities}
-          currentPage={currentPage}
-          onSetBinding={handleSetBinding}
-          onRemoveBinding={handleRemoveBinding}
-        />
-      </main>
+            <DeviceLayout
+              device={device}
+              bindings={bindings}
+              selectedInput={selectedInput}
+              activeInputs={activeInputs}
+              systemState={systemState}
+              currentPage={currentPage}
+              pageCount={pageCount}
+              onSelectInput={setSelectedInput}
+              onDrop={handleDrop}
+              onCopyBinding={handleCopyBinding}
+            />
+
+            <BindingEditor
+              selectedInput={selectedInput}
+              bindings={bindings}
+              capabilities={capabilities}
+              currentPage={currentPage}
+              onSetBinding={handleSetBinding}
+              onRemoveBinding={handleRemoveBinding}
+            />
+          </main>
+        ) : (
+          <PluginsPage onPluginToggle={refreshCapabilities} />
+        )}
+      </div>
     </div>
   );
 }
