@@ -11,8 +11,9 @@ Restart=on-failure
 RestartSec=5
 
 # Environment for GUI applications
-Environment=DISPLAY=:0
-Environment=WAYLAND_DISPLAY=wayland-0
+Environment=DISPLAY={{DISPLAY}}
+Environment=WAYLAND_DISPLAY={{WAYLAND_DISPLAY}}
+Environment=XDG_RUNTIME_DIR={{XDG_RUNTIME_DIR}}
 
 # Uncomment these if you have display issues on Wayland (especially with Nvidia):
 # Environment=GDK_BACKEND=x11

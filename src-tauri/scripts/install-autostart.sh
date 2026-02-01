@@ -36,6 +36,14 @@ APP_NAME_LOWER=$(echo "$APP_NAME" | tr '[:upper:]' '[:lower:]')
 # Known previous app names to clean up (add old names here when renaming)
 PREVIOUS_NAMES=("archdeck" "streamdeck-linux" "streamdecklinux")
 
+# Warn if no display detected (running from SSH, etc.)
+if [ -z "$DISPLAY" ] && [ -z "$WAYLAND_DISPLAY" ]; then
+    echo -e "${YELLOW}Warning: No DISPLAY or WAYLAND_DISPLAY detected.${NC}"
+    echo "Run this script from within your graphical session (not SSH)."
+    echo "The service may not start correctly with default display values."
+    echo ""
+fi
+
 echo -e "${GREEN}Installing $APP_NAME autostart service...${NC}"
 echo "  App Name: $APP_NAME"
 echo "  Service Name: ${APP_NAME_LOWER}.service"
@@ -121,11 +129,23 @@ mkdir -p "$SYSTEMD_USER_DIR"
 SERVICE_TEMPLATE="$SCRIPT_DIR/archdeck.service.template"
 SERVICE_FILE="$SYSTEMD_USER_DIR/${APP_NAME_LOWER}.service"
 
+# Detect display environment (with fallbacks)
+DETECTED_DISPLAY="${DISPLAY:-:0}"
+DETECTED_WAYLAND="${WAYLAND_DISPLAY:-wayland-0}"
+DETECTED_XDG_RUNTIME="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+
+echo "  Display: $DETECTED_DISPLAY"
+echo "  Wayland: $DETECTED_WAYLAND"
+echo "  XDG Runtime: $DETECTED_XDG_RUNTIME"
+
 if [ -f "$SERVICE_TEMPLATE" ]; then
     # Replace placeholders in template
     sed -e "s|{{APP_NAME}}|$APP_NAME|g" \
         -e "s|{{APP_NAME_LOWER}}|$APP_NAME_LOWER|g" \
         -e "s|{{INSTALL_PATH}}|$INSTALL_PATH|g" \
+        -e "s|{{DISPLAY}}|$DETECTED_DISPLAY|g" \
+        -e "s|{{WAYLAND_DISPLAY}}|$DETECTED_WAYLAND|g" \
+        -e "s|{{XDG_RUNTIME_DIR}}|$DETECTED_XDG_RUNTIME|g" \
         "$SERVICE_TEMPLATE" > "$SERVICE_FILE"
 else
     # Generate service file inline if template not found
@@ -140,8 +160,9 @@ Type=simple
 ExecStart=$INSTALL_PATH/$APP_NAME_LOWER --hidden
 Restart=on-failure
 RestartSec=5
-Environment=DISPLAY=:0
-Environment=WAYLAND_DISPLAY=wayland-0
+Environment=DISPLAY=$DETECTED_DISPLAY
+Environment=WAYLAND_DISPLAY=$DETECTED_WAYLAND
+Environment=XDG_RUNTIME_DIR=$DETECTED_XDG_RUNTIME
 
 [Install]
 WantedBy=default.target

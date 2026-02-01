@@ -169,12 +169,18 @@ To disable autostart:
 
 **Service won't start:**
 - Check logs: `journalctl --user -u archdeck -f`
-- Ensure Wayland/X11 session is active
+- If you see "Authorization required", the display environment is wrong
+- Re-run `install-autostart.sh` **from within your graphical session** (not SSH)
+- Verify environment matches: `echo $DISPLAY $WAYLAND_DISPLAY`
 
 **Blank window or display glitches (Wayland):**
 - Run with X11 backend: `GDK_BACKEND=x11 archdeck`
 - Or disable WebKit compositing: `WEBKIT_DISABLE_COMPOSITING_MODE=1 archdeck`
-- For systemd service, edit `~/.config/systemd/user/archdeck.service` and uncomment the environment lines
+- For systemd service, edit `~/.config/systemd/user/archdeck.service` and add:
+  ```
+  Environment=GDK_BACKEND=x11
+  ```
+  Then run `systemctl --user daemon-reload && systemctl --user restart archdeck`
 
 **Media controls not working:**
 - Install `playerctl`
