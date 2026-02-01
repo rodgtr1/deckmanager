@@ -8,16 +8,7 @@ import {
   inputsMatch,
   getInputDisplayName,
 } from "../types";
-import { getCapabilityIcon } from "./CapabilityBrowser";
 import IconBrowser from "./IconBrowser";
-
-// Icon picker options
-const ICONS = [
-  "\u{1F50A}", "\u{1F507}", "\u25B6\uFE0F", "\u23F8", "\u23ED", "\u23EE", "\u23F9",
-  "\u{1F310}", "\u{1F4C1}", "\u2699\uFE0F", "\u{1F3AE}", "\u{1F4A1}", "\u{1F5A5}\uFE0F",
-  "\u{1F3A4}", "\u{1F4F7}", "\u{1F4F9}", "\u{1F4DD}", "\u{1F512}", "\u{1F513}",
-  "\u2B50", "\u2764\uFE0F", "\u{1F525}", "\u26A1", "\u2601\uFE0F", "\u{1F319}",
-];
 
 interface BindingEditorProps {
   selectedInput: InputRef | null;
@@ -49,7 +40,6 @@ export default function BindingEditor({
   const [step, setStep] = useState<number>(0.02);
   const [command, setCommand] = useState<string>("");
   const [url, setUrl] = useState<string>("https://");
-  const [customIcon, setCustomIcon] = useState<string>("");
   const [customLabel, setCustomLabel] = useState<string>("");
   const [buttonImage, setButtonImage] = useState<string>("");
   const [buttonImageAlt, setButtonImageAlt] = useState<string>("");
@@ -93,7 +83,6 @@ export default function BindingEditor({
   useEffect(() => {
     if (currentBinding) {
       setSelectedCapabilityId(currentBinding.capability.type);
-      setCustomIcon(currentBinding.icon || "");
       setCustomLabel(currentBinding.label || "");
       setButtonImage(currentBinding.button_image || "");
       setButtonImageAlt(currentBinding.button_image_alt || "");
@@ -127,7 +116,6 @@ export default function BindingEditor({
       setStep(0.02);
       setCommand("");
       setUrl("https://");
-      setCustomIcon("");
       setCustomLabel("");
       setButtonImage("");
       setButtonImageAlt("");
@@ -212,8 +200,8 @@ export default function BindingEditor({
         return;
     }
 
-    // Pass icon/label only if customized
-    const icon = customIcon || undefined;
+    // Pass label only if customized (no icon picker anymore)
+    const icon = undefined;
     const label = customLabel || undefined;
     // For button image and show label, pass the actual values (not using || which breaks false)
     const image = buttonImage.trim() || undefined;
@@ -246,16 +234,10 @@ export default function BindingEditor({
     if (!selectedInput) return;
     onRemoveBinding(selectedInput, currentPage);
     setSelectedCapabilityId("");
-    setCustomIcon("");
     setCustomLabel("");
     setButtonImage("");
     setButtonImageAlt("");
     setShowLabel(false);
-  };
-
-  // Get default icon for current capability
-  const getDefaultIcon = (): string => {
-    return selectedCapabilityId ? getCapabilityIcon(selectedCapabilityId) : "";
   };
 
   // Get preview URL for button image
@@ -468,30 +450,6 @@ export default function BindingEditor({
 
       {selectedCapabilityId && (
         <>
-          <div className="editor-field">
-            <label>Icon</label>
-            <div className="icon-picker">
-              <button
-                type="button"
-                className={`icon-option ${customIcon === "" ? "selected" : ""}`}
-                onClick={() => setCustomIcon("")}
-                title="Use default icon"
-              >
-                {getDefaultIcon()}
-              </button>
-              {ICONS.map((icon) => (
-                <button
-                  key={icon}
-                  type="button"
-                  className={`icon-option ${customIcon === icon ? "selected" : ""}`}
-                  onClick={() => setCustomIcon(icon)}
-                >
-                  {icon}
-                </button>
-              ))}
-            </div>
-          </div>
-
           <div className="editor-field">
             <label htmlFor="label-input">Custom Label</label>
             <input

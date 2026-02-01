@@ -152,19 +152,23 @@ describe("CapabilityBrowser", () => {
 });
 
 describe("getCapabilityIcon", () => {
-  it("returns correct icon for SystemAudio", () => {
-    expect(getCapabilityIcon("SystemAudio")).toBe("\u{1F50A}");
+  it("returns a React element for known capability", () => {
+    const icon = getCapabilityIcon("SystemAudio");
+    expect(icon).not.toBeNull();
   });
 
-  it("returns correct icon for Mute", () => {
-    expect(getCapabilityIcon("Mute")).toBe("\u{1F507}");
+  it("returns a React element for Mute", () => {
+    const icon = getCapabilityIcon("Mute");
+    expect(icon).not.toBeNull();
   });
 
-  it("returns correct icon for ElgatoKeyLight", () => {
-    expect(getCapabilityIcon("ElgatoKeyLight")).toBe("\u{1F4A1}");
+  it("returns a React element for ElgatoKeyLight", () => {
+    const icon = getCapabilityIcon("ElgatoKeyLight");
+    expect(icon).not.toBeNull();
   });
 
-  it("returns question mark for unknown capability", () => {
-    expect(getCapabilityIcon("UnknownCapability")).toBe("\u2753");
+  it("returns null for unknown capability", () => {
+    const icon = getCapabilityIcon("UnknownCapability");
+    expect(icon).toBeNull();
   });
 });

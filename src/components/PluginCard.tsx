@@ -1,4 +1,11 @@
+import { Zap, Lightbulb, Plug, LucideIcon } from "lucide-react";
 import { PluginInfo } from "../types";
+
+// Map plugin IDs to Lucide icons
+const PLUGIN_ICONS: Record<string, LucideIcon> = {
+  core: Zap,
+  elgato: Lightbulb,
+};
 
 interface PluginCardProps {
   plugin: PluginInfo;
@@ -20,13 +27,17 @@ export default function PluginCard({
     }
   };
 
+  const PluginIcon = PLUGIN_ICONS[plugin.id] || Plug;
+
   return (
     <div
       className={`plugin-card ${isSelected ? "selected" : ""} ${!plugin.enabled ? "disabled" : ""}`}
       onClick={onSelect}
     >
       <div className="plugin-card-header">
-        <span className="plugin-icon">{plugin.icon}</span>
+        <span className="plugin-icon">
+          <PluginIcon size={20} />
+        </span>
         <div className="plugin-info">
           <div className="plugin-name">
             {plugin.name}

@@ -12,6 +12,7 @@ import {
   encoderPressRef,
 } from "../types";
 import { getCapabilityIcon } from "./CapabilityBrowser";
+import { ReactNode } from "react";
 
 // Get preview URL for button image (handles both URLs and local paths)
 function getImageUrl(imagePath: string): string {
@@ -149,9 +150,9 @@ export default function DeviceLayout({
   };
 
   // Get display content for a binding (icon + label or default)
-  const getBindingDisplay = (binding: Binding | undefined): { icon: string; label: string } | null => {
+  const getBindingDisplay = (binding: Binding | undefined): { icon: ReactNode; label: string } | null => {
     if (!binding) return null;
-    const icon = binding.icon || getCapabilityIcon(binding.capability.type);
+    const icon = getCapabilityIcon(binding.capability.type);
     const label = binding.label || getCapabilityDisplayName(binding.capability);
     return { icon, label };
   };
@@ -319,7 +320,7 @@ export default function DeviceLayout({
         onDrop={(e) => handleDrop(e, swipeInput)}
       >
         <span className="touch-strip-label">
-          {display ? `${display.icon} ${display.label}` : "Touch Strip"}
+          {display ? <>{display.icon} {display.label}</> : "Touch Strip"}
         </span>
       </div>
     );

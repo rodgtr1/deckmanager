@@ -1,4 +1,22 @@
-import { useState, useEffect, DragEvent } from "react";
+import { useState, useEffect, DragEvent, ReactNode } from "react";
+import {
+  Volume2,
+  VolumeX,
+  Volume1,
+  Mic,
+  MicOff,
+  Play,
+  SkipForward,
+  SkipBack,
+  Square,
+  Terminal,
+  AppWindow,
+  Globe,
+  Lightbulb,
+  Music,
+  Zap,
+  LucideIcon,
+} from "lucide-react";
 import { CapabilityInfo } from "../types";
 
 interface CapabilityBrowserProps {
@@ -8,9 +26,9 @@ interface CapabilityBrowserProps {
 }
 
 // Module definitions with icons and capability groupings
-const MODULES: Record<string, { icon: string; capabilities: string[] }> = {
+const MODULES: Record<string, { icon: LucideIcon; capabilities: string[] }> = {
   Audio: {
-    icon: "\u{1F3B5}",
+    icon: Music,
     capabilities: [
       "SystemAudio",
       "Mute",
@@ -27,39 +45,40 @@ const MODULES: Record<string, { icon: string; capabilities: string[] }> = {
     ],
   },
   Lighting: {
-    icon: "\u{1F4A1}",
+    icon: Lightbulb,
     capabilities: [
       "ElgatoKeyLight",
     ],
   },
   Commands: {
-    icon: "\u26A1",
+    icon: Zap,
     capabilities: ["RunCommand", "LaunchApp", "OpenURL"],
   },
 };
 
-// Default icons for capabilities
-const CAPABILITY_ICONS: Record<string, string> = {
-  SystemAudio: "\u{1F50A}",
-  Mute: "\u{1F507}",
-  VolumeUp: "\u{1F50A}",
-  VolumeDown: "\u{1F509}",
-  Microphone: "\u{1F3A4}",
-  MicMute: "\u{1F507}",
-  MicVolumeUp: "\u{1F3A4}",
-  MicVolumeDown: "\u{1F3A4}",
-  MediaPlayPause: "\u25B6\uFE0F",
-  MediaNext: "\u23ED",
-  MediaPrevious: "\u23EE",
-  MediaStop: "\u23F9",
-  RunCommand: "\u2699\uFE0F",
-  LaunchApp: "\u{1F4C1}",
-  OpenURL: "\u{1F310}",
-  ElgatoKeyLight: "\u{1F4A1}",
+// Lucide icons for capabilities
+const CAPABILITY_ICONS: Record<string, LucideIcon> = {
+  SystemAudio: Volume2,
+  Mute: VolumeX,
+  VolumeUp: Volume2,
+  VolumeDown: Volume1,
+  Microphone: Mic,
+  MicMute: MicOff,
+  MicVolumeUp: Mic,
+  MicVolumeDown: Mic,
+  MediaPlayPause: Play,
+  MediaNext: SkipForward,
+  MediaPrevious: SkipBack,
+  MediaStop: Square,
+  RunCommand: Terminal,
+  LaunchApp: AppWindow,
+  OpenURL: Globe,
+  ElgatoKeyLight: Lightbulb,
 };
 
-export function getCapabilityIcon(capabilityId: string): string {
-  return CAPABILITY_ICONS[capabilityId] || "\u2753";
+export function getCapabilityIcon(capabilityId: string): ReactNode {
+  const Icon = CAPABILITY_ICONS[capabilityId];
+  return Icon ? <Icon size={14} /> : null;
 }
 
 export default function CapabilityBrowser({
@@ -114,7 +133,7 @@ export default function CapabilityBrowser({
       <h2 className="browser-title">Capabilities</h2>
 
       <div className="module-list">
-        {Object.entries(MODULES).map(([moduleName, { icon, capabilities: capIds }]) => {
+        {Object.entries(MODULES).map(([moduleName, { icon: ModuleIcon, capabilities: capIds }]) => {
           const isExpanded = expandedModules.has(moduleName);
           const moduleCapabilities = capIds
             .map(getCapabilityInfo)
@@ -130,27 +149,32 @@ export default function CapabilityBrowser({
                 <span className="module-expand-icon">
                   {isExpanded ? "\u25BC" : "\u25B6"}
                 </span>
-                <span className="module-icon">{icon}</span>
+                <span className="module-icon">
+                  <ModuleIcon size={16} />
+                </span>
                 <span className="module-name">{moduleName}</span>
               </button>
 
               {isExpanded && (
                 <div className="capability-list">
-                  {moduleCapabilities.map((cap) => (
-                    <div
-                      key={cap.id}
-                      className={`capability-item ${selectedCapabilityId === cap.id ? "selected" : ""}`}
-                      draggable
-                      onDragStart={(e) => handleDragStart(e, cap.id)}
-                      onClick={() => onSelect(cap.id)}
-                      title={cap.description}
-                    >
-                      <span className="capability-icon">
-                        {CAPABILITY_ICONS[cap.id] || "\u2753"}
-                      </span>
-                      <span className="capability-name">{cap.name}</span>
-                    </div>
-                  ))}
+                  {moduleCapabilities.map((cap) => {
+                    const CapIcon = CAPABILITY_ICONS[cap.id];
+                    return (
+                      <div
+                        key={cap.id}
+                        className={`capability-item ${selectedCapabilityId === cap.id ? "selected" : ""}`}
+                        draggable
+                        onDragStart={(e) => handleDragStart(e, cap.id)}
+                        onClick={() => onSelect(cap.id)}
+                        title={cap.description}
+                      >
+                        <span className="capability-icon">
+                          {CapIcon && <CapIcon size={14} />}
+                        </span>
+                        <span className="capability-name">{cap.name}</span>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>

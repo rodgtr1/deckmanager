@@ -1,7 +1,14 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { Zap, Lightbulb, Plug, LucideIcon } from "lucide-react";
 import { PluginInfo } from "../types";
 import PluginCard from "./PluginCard";
+
+// Map plugin IDs to Lucide icons
+const PLUGIN_ICONS: Record<string, LucideIcon> = {
+  core: Zap,
+  elgato: Lightbulb,
+};
 
 interface PluginsPageProps {
   onPluginToggle: () => void;
@@ -66,7 +73,12 @@ export default function PluginsPage({ onPluginToggle }: PluginsPageProps) {
         {selectedPlugin ? (
           <>
             <div className="plugin-docs-header">
-              <span className="plugin-docs-icon">{selectedPlugin.icon}</span>
+              <span className="plugin-docs-icon">
+                {(() => {
+                  const Icon = PLUGIN_ICONS[selectedPlugin.id] || Plug;
+                  return <Icon size={28} />;
+                })()}
+              </span>
               <div className="plugin-docs-title">
                 <h2>{selectedPlugin.name}</h2>
                 <span className="version">v{selectedPlugin.version}</span>
