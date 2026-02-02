@@ -1,6 +1,6 @@
 #!/bin/bash
-# Install autostart systemd user service for Stream Deck controller
-# Reads app name from tauri.conf.json for consistent naming across all components
+# Install autostart for Stream Deck controller
+# Uses XDG autostart (most compatible) with optional systemd service
 
 set -e
 
@@ -10,18 +10,17 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Find tauri.conf.json (look in parent directory from scripts/)
 TAURI_CONF="$SCRIPT_DIR/../tauri.conf.json"
 if [ ! -f "$TAURI_CONF" ]; then
-    # Try looking relative to installed location
     TAURI_CONF="/usr/share/archdeck/tauri.conf.json"
 fi
 
 # Extract productName from tauri.conf.json
 if [ -f "$TAURI_CONF" ]; then
-    # Simple extraction without jq dependency
     APP_NAME=$(grep -o '"productName"[[:space:]]*:[[:space:]]*"[^"]*"' "$TAURI_CONF" | sed 's/.*: *"\([^"]*\)".*/\1/')
 fi
 
@@ -33,83 +32,18 @@ fi
 
 APP_NAME_LOWER=$(echo "$APP_NAME" | tr '[:upper:]' '[:lower:]')
 
-# Known previous app names to clean up (add old names here when renaming)
-PREVIOUS_NAMES=("archdeck" "streamdeck-linux" "streamdecklinux")
-
-# Warn if no display detected (running from SSH, etc.)
-if [ -z "$DISPLAY" ] && [ -z "$WAYLAND_DISPLAY" ]; then
-    echo -e "${YELLOW}Warning: No DISPLAY or WAYLAND_DISPLAY detected.${NC}"
-    echo "Run this script from within your graphical session (not SSH)."
-    echo "The service may not start correctly with default display values."
-    echo ""
-fi
-
-echo -e "${GREEN}Installing $APP_NAME autostart service...${NC}"
+echo -e "${GREEN}Installing $APP_NAME autostart...${NC}"
 echo "  App Name: $APP_NAME"
-echo "  Service Name: ${APP_NAME_LOWER}.service"
 
-# --- Cleanup old installations with different names ---
-SYSTEMD_USER_DIR="$HOME/.config/systemd/user"
-CONFIG_BASE_DIR="$HOME/.config"
-
-for OLD_NAME in "${PREVIOUS_NAMES[@]}"; do
-    # Skip if it's the current name
-    if [ "$OLD_NAME" = "$APP_NAME_LOWER" ]; then
-        continue
-    fi
-
-    OLD_SERVICE="$SYSTEMD_USER_DIR/${OLD_NAME}.service"
-    OLD_CONFIG_DIR="$CONFIG_BASE_DIR/$OLD_NAME"
-    NEW_CONFIG_DIR="$CONFIG_BASE_DIR/$APP_NAME_LOWER"
-
-    # Clean up old systemd service
-    if [ -f "$OLD_SERVICE" ]; then
-        echo -e "${YELLOW}Found old service: $OLD_SERVICE${NC}"
-
-        # Stop the service if running
-        if systemctl --user is-active "$OLD_NAME" &>/dev/null; then
-            echo "  Stopping old service..."
-            systemctl --user stop "$OLD_NAME" 2>/dev/null || true
-        fi
-
-        # Disable the service
-        if systemctl --user is-enabled "$OLD_NAME" &>/dev/null; then
-            echo "  Disabling old service..."
-            systemctl --user disable "$OLD_NAME" 2>/dev/null || true
-        fi
-
-        # Remove the old service file
-        echo "  Removing old service file..."
-        rm -f "$OLD_SERVICE"
-        echo -e "${GREEN}  Cleaned up old service: $OLD_NAME${NC}"
-    fi
-
-    # Migrate config directory if old exists and new doesn't
-    if [ -d "$OLD_CONFIG_DIR" ] && [ ! -d "$NEW_CONFIG_DIR" ]; then
-        echo -e "${YELLOW}Migrating config from $OLD_CONFIG_DIR to $NEW_CONFIG_DIR${NC}"
-        mv "$OLD_CONFIG_DIR" "$NEW_CONFIG_DIR"
-        echo -e "${GREEN}  Config migrated successfully${NC}"
-    elif [ -d "$OLD_CONFIG_DIR" ] && [ -d "$NEW_CONFIG_DIR" ]; then
-        echo -e "${YELLOW}Warning: Both old ($OLD_CONFIG_DIR) and new ($NEW_CONFIG_DIR) config dirs exist${NC}"
-        echo "  Old config preserved - merge manually if needed"
-    fi
-done
-
-# Reload after cleanup
-if [ -d "$SYSTEMD_USER_DIR" ]; then
-    systemctl --user daemon-reload 2>/dev/null || true
-fi
-
-echo ""
-
-# Determine install path
+# --- Determine install path ---
 INSTALL_PATH=""
+BINARY_PATH=""
 if [ -x "/usr/bin/$APP_NAME_LOWER" ]; then
-    INSTALL_PATH="/usr/bin"
+    BINARY_PATH="/usr/bin/$APP_NAME_LOWER"
 elif [ -x "$HOME/.local/bin/$APP_NAME_LOWER" ]; then
-    INSTALL_PATH="$HOME/.local/bin"
+    BINARY_PATH="$HOME/.local/bin/$APP_NAME_LOWER"
 elif [ -x "$(dirname "$SCRIPT_DIR")/target/release/$APP_NAME_LOWER" ]; then
-    INSTALL_PATH="$(dirname "$SCRIPT_DIR")/target/release"
+    BINARY_PATH="$(dirname "$SCRIPT_DIR")/target/release/$APP_NAME_LOWER"
 else
     echo -e "${RED}Error: Could not find $APP_NAME_LOWER binary${NC}"
     echo "Expected locations:"
@@ -119,76 +53,167 @@ else
     exit 1
 fi
 
-echo "  Binary Path: $INSTALL_PATH/$APP_NAME_LOWER"
+echo "  Binary: $BINARY_PATH"
 
-# Create systemd user directory
-SYSTEMD_USER_DIR="$HOME/.config/systemd/user"
-mkdir -p "$SYSTEMD_USER_DIR"
+# --- Find icon ---
+ICON_PATH=""
+for icon_loc in \
+    "/usr/share/icons/hicolor/256x256/apps/${APP_NAME_LOWER}.png" \
+    "/usr/share/icons/hicolor/128x128/apps/${APP_NAME_LOWER}.png" \
+    "/usr/share/pixmaps/${APP_NAME_LOWER}.png" \
+    "$HOME/.local/share/icons/hicolor/256x256/apps/${APP_NAME_LOWER}.png" \
+    "$(dirname "$SCRIPT_DIR")/icons/icon.png"; do
+    if [ -f "$icon_loc" ]; then
+        ICON_PATH="$icon_loc"
+        break
+    fi
+done
 
-# Generate service file from template
-SERVICE_TEMPLATE="$SCRIPT_DIR/archdeck.service.template"
-SERVICE_FILE="$SYSTEMD_USER_DIR/${APP_NAME_LOWER}.service"
-
-# Detect display environment (with fallbacks)
-DETECTED_DISPLAY="${DISPLAY:-:0}"
-DETECTED_WAYLAND="${WAYLAND_DISPLAY:-wayland-0}"
-DETECTED_XDG_RUNTIME="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
-
-echo "  Display: $DETECTED_DISPLAY"
-echo "  Wayland: $DETECTED_WAYLAND"
-echo "  XDG Runtime: $DETECTED_XDG_RUNTIME"
-
-if [ -f "$SERVICE_TEMPLATE" ]; then
-    # Replace placeholders in template
-    sed -e "s|{{APP_NAME}}|$APP_NAME|g" \
-        -e "s|{{APP_NAME_LOWER}}|$APP_NAME_LOWER|g" \
-        -e "s|{{INSTALL_PATH}}|$INSTALL_PATH|g" \
-        -e "s|{{DISPLAY}}|$DETECTED_DISPLAY|g" \
-        -e "s|{{WAYLAND_DISPLAY}}|$DETECTED_WAYLAND|g" \
-        -e "s|{{XDG_RUNTIME_DIR}}|$DETECTED_XDG_RUNTIME|g" \
-        "$SERVICE_TEMPLATE" > "$SERVICE_FILE"
-else
-    # Generate service file inline if template not found
-    cat > "$SERVICE_FILE" << EOF
-[Unit]
-Description=$APP_NAME - Stream Deck Controller
-After=graphical-session.target
-Wants=graphical-session.target
-
-[Service]
-Type=simple
-ExecStart=$INSTALL_PATH/$APP_NAME_LOWER --hidden
-Restart=on-failure
-RestartSec=5
-Environment=DISPLAY=$DETECTED_DISPLAY
-Environment=WAYLAND_DISPLAY=$DETECTED_WAYLAND
-Environment=XDG_RUNTIME_DIR=$DETECTED_XDG_RUNTIME
-
-[Install]
-WantedBy=default.target
-EOF
+# Fallback to app name (system will search for it)
+if [ -z "$ICON_PATH" ]; then
+    ICON_PATH="$APP_NAME_LOWER"
 fi
 
-echo -e "${GREEN}Created service file: $SERVICE_FILE${NC}"
+# --- Cleanup old systemd services ---
+SYSTEMD_USER_DIR="$HOME/.config/systemd/user"
+PREVIOUS_NAMES=("archdeck" "streamdeck-linux" "streamdecklinux")
 
-# Reload systemd user daemon
-echo "Reloading systemd user daemon..."
-systemctl --user daemon-reload
+for OLD_NAME in "${PREVIOUS_NAMES[@]}"; do
+    OLD_SERVICE="$SYSTEMD_USER_DIR/${OLD_NAME}.service"
+    if [ -f "$OLD_SERVICE" ]; then
+        echo -e "${YELLOW}Cleaning up old systemd service: $OLD_NAME${NC}"
+        systemctl --user stop "$OLD_NAME" 2>/dev/null || true
+        systemctl --user disable "$OLD_NAME" 2>/dev/null || true
+        rm -f "$OLD_SERVICE"
+    fi
+done
 
-# Enable the service
-echo "Enabling $APP_NAME_LOWER service..."
-systemctl --user enable "$APP_NAME_LOWER.service"
+if [ -d "$SYSTEMD_USER_DIR" ]; then
+    systemctl --user daemon-reload 2>/dev/null || true
+fi
+
+# --- Cleanup old XDG autostart entries ---
+AUTOSTART_DIR="$HOME/.config/autostart"
+for OLD_NAME in "${PREVIOUS_NAMES[@]}"; do
+    OLD_DESKTOP="$AUTOSTART_DIR/${OLD_NAME}.desktop"
+    if [ -f "$OLD_DESKTOP" ] && [ "$OLD_NAME" != "$APP_NAME_LOWER" ]; then
+        echo -e "${YELLOW}Cleaning up old autostart: $OLD_NAME.desktop${NC}"
+        rm -f "$OLD_DESKTOP"
+    fi
+done
+
+# ============================================================
+# Detect compositor/DE
+# ============================================================
+
+COMPOSITOR=""
+if [ -n "$HYPRLAND_INSTANCE_SIGNATURE" ] || pgrep -x "Hyprland" > /dev/null 2>&1; then
+    COMPOSITOR="hyprland"
+elif [ -n "$SWAYSOCK" ] || pgrep -x "sway" > /dev/null 2>&1; then
+    COMPOSITOR="sway"
+fi
+
+# ============================================================
+# HYPRLAND/SWAY: Add exec-once to config
+# ============================================================
+
+HYPRLAND_CONF="$HOME/.config/hypr/hyprland.conf"
+SWAY_CONF="$HOME/.config/sway/config"
+EXEC_LINE="exec-once = $BINARY_PATH --hidden"
+SWAY_EXEC_LINE="exec $BINARY_PATH --hidden"
+
+if [ "$COMPOSITOR" = "hyprland" ] && [ -f "$HYPRLAND_CONF" ]; then
+    echo ""
+    echo -e "${BLUE}Hyprland detected - configuring autostart...${NC}"
+
+    # Check if already configured
+    if grep -qF "$BINARY_PATH" "$HYPRLAND_CONF" 2>/dev/null; then
+        echo -e "${YELLOW}Already configured in hyprland.conf${NC}"
+    else
+        # Add exec-once line
+        echo "" >> "$HYPRLAND_CONF"
+        echo "# $APP_NAME - Stream Deck Controller" >> "$HYPRLAND_CONF"
+        echo "$EXEC_LINE" >> "$HYPRLAND_CONF"
+        echo -e "${GREEN}Added to $HYPRLAND_CONF:${NC}"
+        echo "  $EXEC_LINE"
+    fi
+
+elif [ "$COMPOSITOR" = "sway" ] && [ -f "$SWAY_CONF" ]; then
+    echo ""
+    echo -e "${BLUE}Sway detected - configuring autostart...${NC}"
+
+    # Check if already configured
+    if grep -qF "$BINARY_PATH" "$SWAY_CONF" 2>/dev/null; then
+        echo -e "${YELLOW}Already configured in sway config${NC}"
+    else
+        # Add exec line
+        echo "" >> "$SWAY_CONF"
+        echo "# $APP_NAME - Stream Deck Controller" >> "$SWAY_CONF"
+        echo "$SWAY_EXEC_LINE" >> "$SWAY_CONF"
+        echo -e "${GREEN}Added to $SWAY_CONF:${NC}"
+        echo "  $SWAY_EXEC_LINE"
+    fi
+
+else
+    # ============================================================
+    # OTHER DEs: XDG Autostart (.desktop file)
+    # ============================================================
+
+    echo ""
+    echo -e "${BLUE}Installing XDG autostart...${NC}"
+
+    mkdir -p "$AUTOSTART_DIR"
+
+    DESKTOP_FILE="$AUTOSTART_DIR/${APP_NAME_LOWER}.desktop"
+
+    cat > "$DESKTOP_FILE" << EOF
+[Desktop Entry]
+Type=Application
+Name=$APP_NAME
+Comment=Stream Deck Controller for Linux
+Exec=$BINARY_PATH --hidden
+Icon=$ICON_PATH
+Terminal=false
+Categories=Utility;
+StartupNotify=false
+StartupWMClass=$APP_NAME_LOWER
+X-GNOME-Autostart-enabled=true
+X-GNOME-Autostart-Delay=2
+X-KDE-autostart-after=panel
+X-MATE-Autostart-Delay=2
+EOF
+
+    chmod +x "$DESKTOP_FILE"
+    echo -e "${GREEN}Created: $DESKTOP_FILE${NC}"
+fi
+
+# ============================================================
+# Summary
+# ============================================================
 
 echo ""
+echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}Installation complete!${NC}"
+echo -e "${GREEN}========================================${NC}"
 echo ""
-echo "Commands to manage the service:"
-echo "  Start now:    systemctl --user start $APP_NAME_LOWER"
-echo "  Stop:         systemctl --user stop $APP_NAME_LOWER"
-echo "  Status:       systemctl --user status $APP_NAME_LOWER"
-echo "  Disable:      systemctl --user disable $APP_NAME_LOWER"
-echo "  View logs:    journalctl --user -u $APP_NAME_LOWER -f"
+echo "$APP_NAME will start automatically on login."
 echo ""
-echo "The service will automatically start on login."
-echo "To start it now without rebooting, run:"
-echo "  systemctl --user start $APP_NAME_LOWER"
+
+if [ "$COMPOSITOR" = "hyprland" ]; then
+    echo -e "${BLUE}Configured for Hyprland${NC}"
+    echo "  Config: $HYPRLAND_CONF"
+    echo "  To disable: Remove the exec-once line from your config"
+elif [ "$COMPOSITOR" = "sway" ]; then
+    echo -e "${BLUE}Configured for Sway${NC}"
+    echo "  Config: $SWAY_CONF"
+    echo "  To disable: Remove the exec line from your config"
+else
+    echo -e "${BLUE}XDG Autostart enabled${NC}"
+    echo "  Works with: GNOME, KDE, XFCE, Cinnamon, MATE, LXQt, and most DEs"
+    echo "  To disable: rm $DESKTOP_FILE"
+fi
+
+echo ""
+echo "To start it now (without logging out):"
+echo "  $BINARY_PATH --hidden &"
+echo ""

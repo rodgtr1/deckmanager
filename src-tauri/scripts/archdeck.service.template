@@ -1,8 +1,11 @@
 [Unit]
 Description={{APP_NAME}} - Stream Deck Controller
-Documentation=https://github.com/yourusername/{{APP_NAME_LOWER}}
+Documentation=https://github.com/travmonkey/archdeck-slim
+# Only start after graphical session is ready
 After=graphical-session.target
 Wants=graphical-session.target
+# Stop when graphical session ends
+PartOf=graphical-session.target
 
 [Service]
 Type=simple
@@ -10,14 +13,13 @@ ExecStart={{INSTALL_PATH}}/{{APP_NAME_LOWER}} --hidden
 Restart=on-failure
 RestartSec=5
 
-# Environment for GUI applications
+# Environment will be inherited from graphical session
+# These are fallbacks if import-environment wasn't run
 Environment=DISPLAY={{DISPLAY}}
 Environment=WAYLAND_DISPLAY={{WAYLAND_DISPLAY}}
 Environment=XDG_RUNTIME_DIR={{XDG_RUNTIME_DIR}}
 
-# Uncomment these if you have display issues on Wayland (especially with Nvidia):
-# Environment=GDK_BACKEND=x11
-# Environment=WEBKIT_DISABLE_COMPOSITING_MODE=1
-
 [Install]
-WantedBy=default.target
+# IMPORTANT: Use graphical-session.target, NOT default.target
+# default.target starts before the compositor is ready, causing black screens
+WantedBy=graphical-session.target

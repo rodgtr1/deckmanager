@@ -1,6 +1,6 @@
 #!/bin/bash
-# Uninstall autostart systemd user service for Stream Deck controller
-# Reads app name from tauri.conf.json for consistent naming
+# Uninstall autostart for Stream Deck controller
+# Removes XDG autostart, systemd service, and Hyprland/Sway config entries
 
 set -e
 
@@ -32,32 +32,63 @@ APP_NAME_LOWER=$(echo "$APP_NAME" | tr '[:upper:]' '[:lower:]')
 
 SYSTEMD_USER_DIR="$HOME/.config/systemd/user"
 SERVICE_FILE="$SYSTEMD_USER_DIR/${APP_NAME_LOWER}.service"
+AUTOSTART_DIR="$HOME/.config/autostart"
+DESKTOP_FILE="$AUTOSTART_DIR/${APP_NAME_LOWER}.desktop"
 CONFIG_DIR="$HOME/.config/$APP_NAME_LOWER"
+HYPRLAND_CONF="$HOME/.config/hypr/hyprland.conf"
+SWAY_CONF="$HOME/.config/sway/config"
 
-echo -e "${YELLOW}Uninstalling $APP_NAME autostart service...${NC}"
+echo -e "${YELLOW}Uninstalling $APP_NAME autostart...${NC}"
 
-# Stop service if running
+# --- Remove from Hyprland config ---
+if [ -f "$HYPRLAND_CONF" ]; then
+    if grep -qF "$APP_NAME_LOWER" "$HYPRLAND_CONF" 2>/dev/null; then
+        echo "Removing from Hyprland config..."
+        # Remove the exec-once line and the comment above it
+        sed -i "/$APP_NAME_LOWER/d" "$HYPRLAND_CONF"
+        sed -i "/# $APP_NAME - Stream Deck Controller/d" "$HYPRLAND_CONF"
+        echo -e "${GREEN}Removed from $HYPRLAND_CONF${NC}"
+    fi
+fi
+
+# --- Remove from Sway config ---
+if [ -f "$SWAY_CONF" ]; then
+    if grep -qF "$APP_NAME_LOWER" "$SWAY_CONF" 2>/dev/null; then
+        echo "Removing from Sway config..."
+        sed -i "/$APP_NAME_LOWER/d" "$SWAY_CONF"
+        sed -i "/# $APP_NAME - Stream Deck Controller/d" "$SWAY_CONF"
+        echo -e "${GREEN}Removed from $SWAY_CONF${NC}"
+    fi
+fi
+
+# --- Remove XDG autostart ---
+if [ -f "$DESKTOP_FILE" ]; then
+    echo "Removing XDG autostart: $DESKTOP_FILE"
+    rm -f "$DESKTOP_FILE"
+    echo -e "${GREEN}XDG autostart removed.${NC}"
+fi
+
+# --- Remove systemd service ---
 if systemctl --user is-active "$APP_NAME_LOWER" &>/dev/null; then
     echo "Stopping $APP_NAME_LOWER service..."
     systemctl --user stop "$APP_NAME_LOWER"
 fi
 
-# Disable service
 if systemctl --user is-enabled "$APP_NAME_LOWER" &>/dev/null; then
     echo "Disabling $APP_NAME_LOWER service..."
     systemctl --user disable "$APP_NAME_LOWER"
 fi
 
-# Remove service file
 if [ -f "$SERVICE_FILE" ]; then
-    echo "Removing service file: $SERVICE_FILE"
+    echo "Removing systemd service: $SERVICE_FILE"
     rm -f "$SERVICE_FILE"
+    echo -e "${GREEN}Systemd service removed.${NC}"
 fi
 
-# Reload systemd
-systemctl --user daemon-reload
+systemctl --user daemon-reload 2>/dev/null || true
 
-echo -e "${GREEN}Service uninstalled successfully.${NC}"
+echo ""
+echo -e "${GREEN}Autostart uninstalled successfully.${NC}"
 echo ""
 
 # Ask about config directory
