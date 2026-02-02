@@ -536,10 +536,10 @@ fn handle_logical_event(
         // Spawn handler in separate thread to avoid blocking event loop
         // This is critical for network-dependent plugins (OBS, Elgato) that may timeout
         std::thread::spawn(move || {
-            let handled = plugin_registry.handle_event(&event, &binding, &system_state);
+            let _handled = plugin_registry.handle_event(&event, &binding, &system_state);
 
             #[cfg(debug_assertions)]
-            eprintln!("  -> handled: {}", handled);
+            eprintln!("  -> handled: {}", _handled);
         });
     }
 }
