@@ -48,11 +48,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: v__VERSION__
-          releaseName: 'Deck Manager v__VERSION__'
+          tagName: ${{ github.ref_name }}
+          releaseName: 'Deck Manager ${{ github.ref_name }}'
           releaseBody: |
-            See the changelog for details.
-
             ## Installation
 
             **Arch Linux:**
@@ -83,5 +81,5 @@ jobs:
             sudo wget https://raw.githubusercontent.com/${{ github.repository }}/main/src-tauri/scripts/70-streamdeck.rules -O /etc/udev/rules.d/70-streamdeck.rules
             sudo udevadm control --reload-rules && sudo udevadm trigger
             ```
-          releaseDraft: true
+          releaseDraft: false
           prerelease: false
