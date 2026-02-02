@@ -6,7 +6,7 @@
 #   1. Removes the deckmanager package via your package manager
 #   2. Removes config files (~/.config/deckmanager)
 #   3. Removes udev rules
-#   4. Removes autostart entries
+#   4. Removes autostart entries (XDG, systemd, Hyprland, Sway)
 #   5. Reloads udev rules
 
 set -e
@@ -109,10 +109,27 @@ main() {
 
     # Remove autostart
     info "Removing autostart entries..."
+
+    # XDG autostart
     rm -f ~/.config/autostart/deckmanager.desktop
+
+    # Systemd service
     systemctl --user disable deckmanager.service > /dev/null 2>&1 || true
     rm -f ~/.config/systemd/user/deckmanager.service
     systemctl --user daemon-reload > /dev/null 2>&1 || true
+
+    # Hyprland config
+    if [[ -f ~/.config/hypr/hyprland.conf ]]; then
+        sed -i '/deckmanager/d' ~/.config/hypr/hyprland.conf
+        sed -i '/Deck Manager - Stream Deck Controller/d' ~/.config/hypr/hyprland.conf
+    fi
+
+    # Sway config
+    if [[ -f ~/.config/sway/config ]]; then
+        sed -i '/deckmanager/d' ~/.config/sway/config
+        sed -i '/Deck Manager - Stream Deck Controller/d' ~/.config/sway/config
+    fi
+
     success "Autostart entries removed"
 
     # Remove desktop entry (user-local)
