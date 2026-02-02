@@ -1,5 +1,4 @@
-use crate::binding::{Binding, InputRef};
-use crate::capability::Capability;
+use crate::binding::Binding;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -141,50 +140,9 @@ fn load_from_path(path: &PathBuf) -> Result<Vec<Binding>> {
 }
 
 /// Default bindings when no config file exists.
+/// Returns empty - users configure their own bindings.
 pub fn default_bindings() -> Vec<Binding> {
-    vec![
-        // System Audio on encoder 0 - rotation for volume, press for mute
-        Binding {
-            input: InputRef::Encoder { index: 0 },
-            capability: Capability::SystemAudio { step: 0.02 },
-            page: 0,
-            icon: None,
-            label: None,
-            button_image: None,
-            button_image_alt: None,
-            show_label: None,
-        },
-        Binding {
-            input: InputRef::EncoderPress { index: 0 },
-            capability: Capability::SystemAudio { step: 0.02 },
-            page: 0,
-            icon: None,
-            label: None,
-            button_image: None,
-            button_image_alt: None,
-            show_label: None,
-        },
-        Binding {
-            input: InputRef::EncoderPress { index: 1 },
-            capability: Capability::MediaPlayPause,
-            page: 0,
-            icon: None,
-            label: None,
-            button_image: None,
-            button_image_alt: None,
-            show_label: None,
-        },
-        Binding {
-            input: InputRef::Button { index: 0 },
-            capability: Capability::MediaPlayPause,
-            page: 0,
-            icon: None,
-            label: None,
-            button_image: None,
-            button_image_alt: None,
-            show_label: None,
-        },
-    ]
+    vec![]
 }
 
 // --- Plugin State Persistence ---
@@ -268,11 +226,13 @@ pub fn save_plugin_state(plugin_id: &str, enabled: bool) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::capability::Capability;
 
     #[test]
     fn default_bindings_exist() {
         let bindings = default_bindings();
-        assert_eq!(bindings.len(), 4);
+        // Default is empty - users configure their own bindings
+        assert!(bindings.is_empty());
     }
 
     #[test]

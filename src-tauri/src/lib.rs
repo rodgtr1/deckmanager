@@ -63,7 +63,7 @@ fn create_plugin_registry() -> Arc<PluginRegistry> {
     #[cfg(feature = "plugin-elgato")]
     registry.register(
         Box::new(plugins::elgato::ElgatoPlugin::new()),
-        Some(&make_config("elgato", true)),
+        Some(&make_config("elgato", false)),
     );
 
     #[cfg(feature = "plugin-obs")]
