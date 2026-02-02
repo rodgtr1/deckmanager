@@ -4,7 +4,7 @@ pkgver=0.1.0
 pkgrel=1
 pkgdesc="Open-source Stream Deck software for Linux"
 arch=('x86_64')
-url="https://github.com/yourusername/deckmanager"
+url="https://github.com/rodgtr1/deckmanager"
 license=('MIT')
 depends=(
     'webkit2gtk-4.1'

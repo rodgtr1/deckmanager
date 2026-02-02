@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Deck Manager Installation Script
-# Usage: curl -sSL https://raw.githubusercontent.com/yourusername/deckmanager/main/install.sh | bash
+# Usage: curl -sSL https://raw.githubusercontent.com/rodgtr1/deckmanager/main/install.sh | bash
 
 set -e
 
-REPO_URL="https://github.com/yourusername/deckmanager"
+REPO_URL="https://github.com/rodgtr1/deckmanager"
 REPO_NAME="deckmanager"
-UDEV_RULES_URL="https://raw.githubusercontent.com/yourusername/deckmanager/main/src-tauri/scripts/70-streamdeck.rules"
+UDEV_RULES_URL="https://raw.githubusercontent.com/rodgtr1/deckmanager/main/src-tauri/scripts/70-streamdeck.rules"
 
 # Colors
 RED='\033[0;31m'
@@ -97,13 +97,19 @@ install_from_source() {
         esac
     fi
 
-    # Clone or update repo
-    local build_dir="/tmp/deckmanager-build"
-    rm -rf "$build_dir"
-
-    info "Cloning repository..."
-    git clone --depth 1 "$REPO_URL" "$build_dir"
-    cd "$build_dir"
+    # Check if we're already in the repo directory
+    local build_dir
+    if [[ -f "PKGBUILD" && -f "src-tauri/tauri.conf.json" ]]; then
+        info "Already in repo directory, building in place..."
+        build_dir="$(pwd)"
+    else
+        # Clone repo
+        build_dir="/tmp/deckmanager-build"
+        rm -rf "$build_dir"
+        info "Cloning repository..."
+        git clone --depth 1 "$REPO_URL" "$build_dir"
+        cd "$build_dir"
+    fi
 
     # Build and install based on distro
     case $(detect_distro) in

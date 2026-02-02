@@ -16,17 +16,11 @@ Configure your Elgato Stream Deck on Linux with a modern UI and extensible plugi
 
 ## Quick Install
 
-**Arch Linux:**
 ```bash
-yay -S deckmanager
+curl -sSL https://raw.githubusercontent.com/rodgtr1/deckmanager/main/install.sh | bash
 ```
 
-**Other distros:**
-```bash
-curl -sSL https://raw.githubusercontent.com/yourusername/deckmanager/main/install.sh | bash
-```
-
-**Manual:** Download `.deb`, `.rpm`, or `.AppImage` from [Releases](https://github.com/yourusername/deckmanager/releases).
+Supports Arch, Debian, Fedora, and derivatives.
 
 ## Usage
 
@@ -92,7 +86,7 @@ See [PLUGIN_API.md](PLUGIN_API.md) for the full guide.
 sudo pacman -S rust npm webkit2gtk-4.1 gtk3 hidapi
 
 # Build
-git clone https://github.com/yourusername/deckmanager
+git clone https://github.com/rodgtr1/deckmanager
 cd deckmanager
 npm ci
 npm run tauri build
@@ -102,7 +96,7 @@ npm run tauri build
 
 **Device not detected:** Install udev rules and replug the device:
 ```bash
-sudo wget https://raw.githubusercontent.com/yourusername/deckmanager/main/src-tauri/scripts/70-streamdeck.rules -O /etc/udev/rules.d/70-streamdeck.rules
+sudo wget https://raw.githubusercontent.com/rodgtr1/deckmanager/main/src-tauri/scripts/70-streamdeck.rules -O /etc/udev/rules.d/70-streamdeck.rules
 sudo udevadm control --reload-rules && sudo udevadm trigger
 ```
 
