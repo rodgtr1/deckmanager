@@ -1,6 +1,25 @@
 #!/usr/bin/env bash
 # Deck Manager Installation Script
 # Usage: curl -sSL https://raw.githubusercontent.com/rodgtr1/deckmanager/main/install.sh | bash
+#
+# WHAT THIS SCRIPT DOES:
+#   1. Detects your distro (Arch, Debian, Fedora)
+#   2. Installs build dependencies via your package manager (requires sudo)
+#   3. Clones the repo to /tmp/deckmanager-build (or builds in place if already in repo)
+#   4. Builds the app:
+#      - Arch: runs makepkg -si (creates and installs a proper package)
+#      - Debian: builds .deb and installs with apt
+#      - Fedora: builds .rpm and installs with dnf
+#   5. Installs udev rules for Stream Deck device access
+#   6. Cleans up build directory
+#   7. Optionally sets up autostart
+#
+# FILES MODIFIED:
+#   - /etc/udev/rules.d/70-streamdeck.rules (device permissions)
+#   - Package installed to /usr/bin/deckmanager
+#   - Desktop entry added to /usr/share/applications/
+#
+# Run with `bash -x install.sh` to see every command as it executes.
 
 set -e
 

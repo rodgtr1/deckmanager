@@ -55,6 +55,12 @@ package() {
     # Remove debian metadata
     rm -rf "$pkgdir/usr/share/doc"
 
+    # Move binary to /usr/lib and install wrapper script
+    # This allows the wrapper to apply Wayland/Nvidia workarounds
+    install -dm755 "$pkgdir/usr/lib/deckmanager"
+    mv "$pkgdir/usr/bin/deckmanager" "$pkgdir/usr/lib/deckmanager/deckmanager-bin"
+    install -Dm755 "src-tauri/scripts/deckmanager-wrapper.sh" "$pkgdir/usr/bin/deckmanager"
+
     # Install udev rules (not included in .deb by default)
     install -Dm644 "src-tauri/scripts/70-streamdeck.rules" "$pkgdir/usr/lib/udev/rules.d/70-streamdeck.rules"
 
