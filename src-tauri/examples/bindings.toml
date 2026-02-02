@@ -1,5 +1,5 @@
-# Example ArchDeck bindings configuration
-# Place this file at ~/.config/archdeck/bindings.toml
+# Example Deck Manager bindings configuration
+# Place this file at ~/.config/deckmanager/bindings.toml
 
 # System Audio on Encoder 0
 # - Rotation: adjust volume (2% per tick)

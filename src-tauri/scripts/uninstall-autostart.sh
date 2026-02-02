@@ -15,7 +15,7 @@ NC='\033[0m' # No Color
 # Find tauri.conf.json
 TAURI_CONF="$SCRIPT_DIR/../tauri.conf.json"
 if [ ! -f "$TAURI_CONF" ]; then
-    TAURI_CONF="/usr/share/archdeck/tauri.conf.json"
+    TAURI_CONF="/usr/share/deckmanager/tauri.conf.json"
 fi
 
 # Extract productName from tauri.conf.json
@@ -25,10 +25,10 @@ fi
 
 # Fallback to default if extraction failed
 if [ -z "$APP_NAME" ]; then
-    APP_NAME="ArchDeck"
+    APP_NAME="Deck Manager"
 fi
 
-APP_NAME_LOWER=$(echo "$APP_NAME" | tr '[:upper:]' '[:lower:]')
+APP_NAME_LOWER=$(echo "$APP_NAME" | tr '[:upper:]' '[:lower:]' | tr -d ' ')
 
 SYSTEMD_USER_DIR="$HOME/.config/systemd/user"
 SERVICE_FILE="$SYSTEMD_USER_DIR/${APP_NAME_LOWER}.service"

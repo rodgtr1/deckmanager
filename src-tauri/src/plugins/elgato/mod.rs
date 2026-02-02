@@ -1,4 +1,4 @@
-//! Elgato Key Light plugin for ArchDeck.
+//! Elgato Key Light plugin for Deck Manager.
 //!
 //! This plugin provides control for Elgato Key Light devices:
 //! - Toggle on/off with button press

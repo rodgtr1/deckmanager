@@ -20,7 +20,7 @@ nmap -p 9123 192.168.1.0/24
 avahi-browse -rt _elg._tcp
 ```
 
-### Configuring in ArchDeck
+### Configuring in Deck Manager
 
 1. Select a button or encoder
 2. Choose "Key Light" capability

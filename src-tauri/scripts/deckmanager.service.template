@@ -1,6 +1,6 @@
 [Unit]
 Description={{APP_NAME}} - Stream Deck Controller
-Documentation=https://github.com/travmonkey/archdeck-slim
+Documentation=https://github.com/yourusername/deckmanager
 # Only start after graphical session is ready
 After=graphical-session.target
 Wants=graphical-session.target

@@ -1,4 +1,4 @@
-//! Optional plugins for ArchDeck.
+//! Optional plugins for Deck Manager.
 //!
 //! Plugins are conditionally compiled based on Cargo feature flags.
 

@@ -1,0 +1,34 @@
+post_install() {
+    echo ":: Reloading udev rules..."
+    udevadm control --reload-rules
+    udevadm trigger
+
+    echo ":: Updating icon cache..."
+    gtk-update-icon-cache -q -t -f /usr/share/icons/hicolor 2>/dev/null || true
+
+    echo ""
+    echo "==> Deck Manager installed successfully!"
+    echo ""
+    echo "    If your Stream Deck is already plugged in, unplug and replug it"
+    echo "    for the new permissions to take effect."
+    echo ""
+    echo "    To enable autostart, run:"
+    echo "      /usr/share/deckmanager/install-autostart.sh"
+    echo ""
+}
+
+post_upgrade() {
+    post_install
+}
+
+post_remove() {
+    echo ":: Updating icon cache..."
+    gtk-update-icon-cache -q -t -f /usr/share/icons/hicolor 2>/dev/null || true
+
+    echo ""
+    echo "==> To remove autostart configuration, run:"
+    echo "      /usr/share/deckmanager/uninstall-autostart.sh"
+    echo ""
+    echo "    Or manually remove from your WM config / ~/.config/autostart/"
+    echo ""
+}

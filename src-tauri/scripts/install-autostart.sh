@@ -16,7 +16,7 @@ NC='\033[0m' # No Color
 # Find tauri.conf.json (look in parent directory from scripts/)
 TAURI_CONF="$SCRIPT_DIR/../tauri.conf.json"
 if [ ! -f "$TAURI_CONF" ]; then
-    TAURI_CONF="/usr/share/archdeck/tauri.conf.json"
+    TAURI_CONF="/usr/share/deckmanager/tauri.conf.json"
 fi
 
 # Extract productName from tauri.conf.json
@@ -27,10 +27,10 @@ fi
 # Fallback to default if extraction failed
 if [ -z "$APP_NAME" ]; then
     echo -e "${YELLOW}Warning: Could not read productName from tauri.conf.json, using default${NC}"
-    APP_NAME="ArchDeck"
+    APP_NAME="Deck Manager"
 fi
 
-APP_NAME_LOWER=$(echo "$APP_NAME" | tr '[:upper:]' '[:lower:]')
+APP_NAME_LOWER=$(echo "$APP_NAME" | tr '[:upper:]' '[:lower:]' | tr -d ' ')
 
 echo -e "${GREEN}Installing $APP_NAME autostart...${NC}"
 echo "  App Name: $APP_NAME"
@@ -76,7 +76,7 @@ fi
 
 # --- Cleanup old systemd services ---
 SYSTEMD_USER_DIR="$HOME/.config/systemd/user"
-PREVIOUS_NAMES=("archdeck" "streamdeck-linux" "streamdecklinux")
+PREVIOUS_NAMES=("archdeck" "streamdeck-linux" "streamdecklinux" "deckmanager")
 
 for OLD_NAME in "${PREVIOUS_NAMES[@]}"; do
     OLD_SERVICE="$SYSTEMD_USER_DIR/${OLD_NAME}.service"

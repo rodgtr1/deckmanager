@@ -1,4 +1,4 @@
-//! Plugin system for ArchDeck.
+//! Plugin system for Deck Manager.
 //!
 //! Provides a trait-based plugin architecture that allows capabilities to be
 //! organized into independent modules that can be enabled/disabled via Cargo features.

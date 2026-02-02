@@ -18,7 +18,7 @@ Control OBS Studio via WebSocket (obs-websocket 5.x protocol, built into OBS 28+
 - **Port**: Default is `4455`
 - **Password**: Set in OBS WebSocket Server Settings (optional)
 
-### Configuring in ArchDeck
+### Configuring in Deck Manager
 
 1. Select a button or encoder
 2. Choose an OBS capability

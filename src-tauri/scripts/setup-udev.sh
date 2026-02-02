@@ -12,9 +12,9 @@ DEST="/etc/udev/rules.d/$RULES_FILE"
 # Extract app name from tauri.conf.json
 TAURI_CONF="$SCRIPT_DIR/../tauri.conf.json"
 if [ -f "$TAURI_CONF" ]; then
-    APP_NAME_LOWER=$(grep -o '"productName"[[:space:]]*:[[:space:]]*"[^"]*"' "$TAURI_CONF" | sed 's/.*: *"\([^"]*\)".*/\1/' | tr '[:upper:]' '[:lower:]')
+    APP_NAME_LOWER=$(grep -o '"productName"[[:space:]]*:[[:space:]]*"[^"]*"' "$TAURI_CONF" | sed 's/.*: *"\([^"]*\)".*/\1/' | tr '[:upper:]' '[:lower:]' | tr -d ' ')
 fi
-APP_NAME_LOWER="${APP_NAME_LOWER:-archdeck}"
+APP_NAME_LOWER="${APP_NAME_LOWER:-deckmanager}"
 
 # Check if running as root
 if [ "$EUID" -ne 0 ]; then

@@ -19,10 +19,10 @@ fn generate_app_constants() {
 
     // Simple JSON parsing for productName (avoid adding serde_json as build dep)
     let product_name =
-        extract_json_string(&config_content, "productName").unwrap_or_else(|| "archdeck".to_string());
+        extract_json_string(&config_content, "productName").unwrap_or_else(|| "deckmanager".to_string());
 
-    // Convert to lowercase for paths/service names
-    let app_name_lower = product_name.to_lowercase();
+    // Convert to lowercase and remove spaces for paths/service names
+    let app_name_lower = product_name.to_lowercase().replace(' ', "");
 
     let out_dir = env::var("OUT_DIR").unwrap();
     let dest_path = Path::new(&out_dir).join("app_constants.rs");
@@ -30,10 +30,10 @@ fn generate_app_constants() {
     let constants = format!(
         r#"/// Auto-generated from tauri.conf.json - do not edit manually
 
-/// Application display name (e.g., "ArchDeck")
+/// Application display name (e.g., "Deck Manager")
 pub const APP_NAME: &str = "{product_name}";
 
-/// Lowercase name for paths, services, etc. (e.g., "archdeck")
+/// Lowercase name for paths, services, etc. (e.g., "deckmanager")
 pub const APP_NAME_LOWER: &str = "{app_name_lower}";
 "#
     );

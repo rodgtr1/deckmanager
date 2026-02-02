@@ -1,4 +1,4 @@
-//! OBS Studio plugin for ArchDeck.
+//! OBS Studio plugin for Deck Manager.
 //!
 //! This plugin provides control for OBS Studio via WebSocket (obs-websocket 5.x protocol):
 //! - Scene switching

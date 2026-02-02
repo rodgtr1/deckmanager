@@ -23,6 +23,17 @@ dist-ssr
 *.sln
 *.sw?
 
+# makepkg build artifacts
+*.pkg.tar.zst
+*.pkg.tar.xz
+pkg/
+src-tauri/target/
+
+# Deb extraction artifacts (safety)
+control.tar.gz
+data.tar.gz
+debian-binary
+
 # Becuase using Claude sandbox mode
 .bash_profile
 .bashrc

@@ -1,200 +1,116 @@
-# ArchDeck
+# Deck Manager — Open-Source Stream Deck Software for Linux
 
-Stream Deck controller for Linux. Configure buttons, encoders, and touch strips with media controls, system commands, app launchers, and Elgato Key Light integration.
+Configure your Elgato Stream Deck on Linux with a modern UI and extensible plugin system.
 
-## Requirements
+![License](https://img.shields.io/badge/license-MIT-blue)
+![Platform](https://img.shields.io/badge/platform-Linux-lightgrey)
 
-- Linux with PipeWire or PulseAudio
-- `playerctl` (for media controls)
+## Features
 
+- Works with all Elgato Stream Deck models (Original, Mini, XL, MK.2, Plus, Pedal, Neo)
+- Media controls, volume, app launchers, custom commands
+- Elgato Key Light integration
+- OBS Studio control
+- Plugin system for custom integrations
+- Runs on Wayland and X11
+
+## Quick Install
+
+**Arch Linux:**
 ```bash
-# Arch Linux
-sudo pacman -S playerctl
-
-# Ubuntu/Debian
-sudo apt install playerctl
-
-# Fedora
-sudo dnf install playerctl
+yay -S deckmanager
 ```
 
-## Installation
-
-### Option A: AppImage (Recommended)
-
-1. Download `ArchDeck.AppImage` from the [Releases](https://github.com/yourusername/archdeck/releases) page
-
-2. Make it executable and run:
-   ```bash
-   chmod +x ArchDeck.AppImage
-   ./ArchDeck.AppImage
-   ```
-
-3. Set up udev rules for device access:
-   ```bash
-   # Download and run the udev setup script
-   curl -sSL https://raw.githubusercontent.com/yourusername/archdeck/main/src-tauri/scripts/setup-udev.sh | sudo bash
-   ```
-   Reconnect your Stream Deck after running this.
-
-4. (Optional) Move to a permanent location:
-   ```bash
-   mkdir -p ~/.local/bin
-   mv ArchDeck.AppImage ~/.local/bin/archdeck
-   ```
-
-### Option B: Deb Package (Ubuntu/Debian)
-
+**Other distros:**
 ```bash
-# Download the .deb from Releases, then:
-sudo apt install ./archdeck_*.deb
-
-# Set up udev rules
-sudo /usr/share/archdeck/setup-udev.sh
+curl -sSL https://raw.githubusercontent.com/yourusername/deckmanager/main/install.sh | bash
 ```
 
-### Option C: RPM Package (Fedora)
-
-```bash
-# Download the .rpm from Releases, then:
-sudo dnf install ./archdeck-*.rpm
-
-# Set up udev rules
-sudo /usr/share/archdeck/setup-udev.sh
-```
-
-### Option D: Build from Source
-
-<details>
-<summary>Click to expand build instructions</summary>
-
-#### Additional build dependencies
-
-```bash
-# Arch Linux
-sudo pacman -S rust nodejs npm webkit2gtk-4.1
-
-# Ubuntu/Debian
-sudo apt install rustc cargo nodejs npm libwebkit2gtk-4.1-dev libgtk-3-dev
-
-# Fedora
-sudo dnf install rust cargo nodejs npm webkit2gtk4.1-devel gtk3-devel
-```
-
-#### Build
-
-```bash
-git clone https://github.com/yourusername/archdeck.git
-cd archdeck
-npm install
-cd src-tauri && cargo build --release && cd ..
-```
-
-#### Set up udev rules
-
-```bash
-sudo ./src-tauri/scripts/setup-udev.sh
-```
-
-Reconnect your Stream Deck after running this.
-
-</details>
-
-## Autostart (Optional)
-
-To run ArchDeck automatically on login in the background:
-
-```bash
-# If installed via package:
-/usr/share/archdeck/install-autostart.sh
-
-# If built from source:
-./src-tauri/scripts/install-autostart.sh
-```
-
-Start immediately without rebooting:
-```bash
-systemctl --user start archdeck
-```
-
-## Running
-
-**With GUI:**
-```bash
-archdeck
-# Or for AppImage: ./ArchDeck.AppImage
-# Or from source: ./src-tauri/target/release/archdeck
-```
-
-**Headless (background):**
-```bash
-archdeck --hidden
-```
+**Manual:** Download `.deb`, `.rpm`, or `.AppImage` from [Releases](https://github.com/yourusername/deckmanager/releases).
 
 ## Usage
 
-1. Connect your Stream Deck
-2. Launch ArchDeck
-3. Click a button or encoder in the device layout
-4. Select a capability from the sidebar
-5. Configure any parameters
-6. Click Save
+1. Plug in your Stream Deck
+2. Run `deckmanager`
+3. Click any button in the UI
+4. Choose an action and configure it
+5. Click Save
 
-Bindings are saved to `~/.config/archdeck/bindings.toml`.
+Configuration is stored in `~/.config/deckmanager/bindings.toml`.
 
-## Service Management
+## Architecture: Core + Plugins
 
+Deck Manager separates **core functionality** from **plugins**:
+
+### Core (always included)
+- Media playback controls (play/pause, next, previous)
+- System volume and mute
+- Run shell commands
+- Open applications and URLs
+- Multi-action sequences
+- Button images and labels
+
+### Plugins (optional, feature-flagged)
+| Plugin | Feature Flag | Description |
+|--------|--------------|-------------|
+| Elgato | `plugin-elgato` | Key Light brightness and color control |
+| OBS | `plugin-obs` | Scene switching, recording, streaming |
+
+Plugins are compiled in via Cargo feature flags. To build without OBS support:
 ```bash
-systemctl --user status archdeck    # Check status
-systemctl --user stop archdeck      # Stop
-systemctl --user restart archdeck   # Restart
-journalctl --user -u archdeck -f    # View logs
+cargo build --release --no-default-features --features plugin-elgato
 ```
 
-To disable autostart:
-```bash
-# If installed via package:
-/usr/share/archdeck/uninstall-autostart.sh
+## Contributing Plugins
 
-# If built from source:
-./src-tauri/scripts/uninstall-autostart.sh
+Plugins extend Deck Manager with new capabilities. Each plugin:
+- Provides actions that can be bound to buttons/encoders
+- Handles input events
+- Can maintain state (e.g., "is muted?")
+
+### Quick Start
+
+1. Add feature flag to `Cargo.toml`
+2. Create `src/plugins/yourplugin/` directory
+3. Implement the `Plugin` trait
+4. Register in `src/lib.rs`
+5. Add TypeScript types in `src/types.ts`
+
+See [PLUGIN_API.md](PLUGIN_API.md) for the full guide.
+
+### Plugin Ideas
+- Philips Hue / Home Assistant
+- Spotify / Tidal
+- Discord mute/deafen
+- Keyboard macros
+- MIDI control
+
+## Building from Source
+
+```bash
+# Dependencies (Arch)
+sudo pacman -S rust npm webkit2gtk-4.1 gtk3 hidapi
+
+# Build
+git clone https://github.com/yourusername/deckmanager
+cd deckmanager
+npm ci
+npm run tauri build
 ```
 
 ## Troubleshooting
 
-**Device not detected:**
-- Ensure udev rules are installed and reconnect the device
-- Check device is visible: `lsusb | grep Elgato`
-- Verify permissions: `ls -la /dev/hidraw*`
+**Device not detected:** Install udev rules and replug the device:
+```bash
+sudo wget https://raw.githubusercontent.com/yourusername/deckmanager/main/src-tauri/scripts/70-streamdeck.rules -O /etc/udev/rules.d/70-streamdeck.rules
+sudo udevadm control --reload-rules && sudo udevadm trigger
+```
 
-**Service won't start:**
-- Check logs: `journalctl --user -u archdeck -f`
-- If you see "Authorization required", the display environment is wrong
-- Re-run `install-autostart.sh` **from within your graphical session** (not SSH)
-- Verify environment matches: `echo $DISPLAY $WAYLAND_DISPLAY`
+**Blank window on Wayland:**
+```bash
+GDK_BACKEND=x11 deckmanager
+```
 
-**Blank window or display glitches (Wayland):**
-- Run with X11 backend: `GDK_BACKEND=x11 archdeck`
-- Or disable WebKit compositing: `WEBKIT_DISABLE_COMPOSITING_MODE=1 archdeck`
-- For systemd service, edit `~/.config/systemd/user/archdeck.service` and add:
-  ```
-  Environment=GDK_BACKEND=x11
-  ```
-  Then run `systemctl --user daemon-reload && systemctl --user restart archdeck`
+## License
 
-**Media controls not working:**
-- Install `playerctl`
-- Verify a media player is running: `playerctl status`
-
-## Security Considerations
-
-ArchDeck is designed for power users who want full control over their Stream Deck. Please be aware of the following:
-
-**Shell Command Execution:** The "Run Command" action executes arbitrary shell commands. This is intentional - it allows you to trigger any script or program from your Stream Deck. However, this means:
-- Only use button configurations (`~/.config/archdeck/bindings.toml`) that you trust
-- Review any `bindings.toml` files before importing them from others
-- Treat shared configurations like you would treat shared shell scripts
-
-**Hardware Access:** ArchDeck requires udev rules to communicate with your Stream Deck over USB. The included rules grant access to Elgato devices for users in the `plugdev` group.
-
-**File Access:** The app can read images from `~/Pictures`, `~/Downloads`, and `~/.config/archdeck` for button icons. It cannot access files outside these directories.
+MIT
