@@ -260,6 +260,16 @@ fn get_capability_type(capability: &crate::capability::Capability) -> &'static s
         Capability::LaunchApp { .. } => "LaunchApp",
         Capability::OpenURL { .. } => "OpenURL",
         Capability::ElgatoKeyLight { .. } => "ElgatoKeyLight",
+        // OBS capabilities
+        Capability::OBSScene { .. } => "OBSScene",
+        Capability::OBSStream { .. } => "OBSStream",
+        Capability::OBSRecord { .. } => "OBSRecord",
+        Capability::OBSSourceVisibility { .. } => "OBSSourceVisibility",
+        Capability::OBSAudio { .. } => "OBSAudio",
+        Capability::OBSStudioMode { .. } => "OBSStudioMode",
+        Capability::OBSReplayBuffer { .. } => "OBSReplayBuffer",
+        Capability::OBSVirtualCam { .. } => "OBSVirtualCam",
+        Capability::OBSTransition { .. } => "OBSTransition",
     }
 }
 

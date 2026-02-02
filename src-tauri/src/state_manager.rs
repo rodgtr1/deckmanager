@@ -14,6 +14,30 @@ pub struct KeyLightState {
     pub temperature: u16,
 }
 use std::collections::HashMap;
+
+/// State of an OBS instance
+#[derive(Debug, Clone, Default)]
+#[allow(dead_code)] // Fields used by plugin-obs feature
+pub struct OBSState {
+    /// Whether streaming is active
+    pub streaming: bool,
+    /// Whether recording is active
+    pub recording: bool,
+    /// Whether recording is paused
+    pub recording_paused: bool,
+    /// Whether Studio Mode is enabled
+    pub studio_mode: bool,
+    /// Whether virtual camera is active
+    pub virtual_cam: bool,
+    /// Whether replay buffer is active
+    pub replay_buffer: bool,
+    /// Current scene name
+    pub current_scene: String,
+    /// Muted state of audio inputs: input_name -> is_muted
+    pub muted_inputs: HashMap<String, bool>,
+    /// Source visibility: "scene:source" -> is_visible
+    pub source_visibility: HashMap<String, bool>,
+}
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -30,6 +54,9 @@ pub struct SystemState {
     pub key_lights: HashMap<String, KeyLightState>,
     /// Toggle states for RunCommand with toggle=true: "input_key:page" -> is_active
     pub toggle_states: HashMap<String, bool>,
+    /// OBS states: "host:port" -> OBSState
+    #[allow(dead_code)] // Used by plugin-obs feature
+    pub obs_states: HashMap<String, OBSState>,
 }
 
 /// Flag to request immediate state check (e.g., after button press)
@@ -96,6 +123,7 @@ pub fn get_current_state() -> SystemState {
         is_playing: check_playing_state(),
         key_lights: HashMap::new(),
         toggle_states: HashMap::new(),
+        obs_states: HashMap::new(),
     }
 }
 

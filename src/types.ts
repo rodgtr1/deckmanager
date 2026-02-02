@@ -19,6 +19,11 @@ export type InputRef =
 // Key Light action types
 export type KeyLightAction = "Toggle" | "On" | "Off" | "SetBrightness";
 
+// OBS action types
+export type OBSStreamAction = "Toggle" | "Start" | "Stop";
+export type OBSRecordAction = "Toggle" | "Start" | "Stop" | "TogglePause";
+export type OBSReplayAction = "Toggle" | "Start" | "Stop" | "Save";
+
 // Capability types matching Rust's Capability enum
 export type Capability =
   | { type: "SystemAudio"; step: number }
@@ -36,7 +41,17 @@ export type Capability =
   | { type: "RunCommand"; command: string; toggle?: boolean }
   | { type: "LaunchApp"; command: string }
   | { type: "OpenURL"; url: string }
-  | { type: "ElgatoKeyLight"; ip: string; port: number; action: KeyLightAction };
+  | { type: "ElgatoKeyLight"; ip: string; port: number; action: KeyLightAction }
+  // OBS Studio capabilities
+  | { type: "OBSScene"; host: string; port: number; password?: string; scene: string }
+  | { type: "OBSStream"; host: string; port: number; password?: string; action: OBSStreamAction }
+  | { type: "OBSRecord"; host: string; port: number; password?: string; action: OBSRecordAction }
+  | { type: "OBSSourceVisibility"; host: string; port: number; password?: string; scene: string; source: string }
+  | { type: "OBSAudio"; host: string; port: number; password?: string; input_name: string; step: number }
+  | { type: "OBSStudioMode"; host: string; port: number; password?: string }
+  | { type: "OBSReplayBuffer"; host: string; port: number; password?: string; action: OBSReplayAction }
+  | { type: "OBSVirtualCam"; host: string; port: number; password?: string }
+  | { type: "OBSTransition"; host: string; port: number; password?: string };
 
 export interface Binding {
   input: InputRef;
@@ -188,6 +203,25 @@ export function createDefaultCapability(capabilityId: string): Capability | null
       return { type: "OpenURL", url: "https://" };
     case "ElgatoKeyLight":
       return { type: "ElgatoKeyLight", ip: "192.168.1.100", port: 9123, action: "Toggle" };
+    // OBS capabilities
+    case "OBSScene":
+      return { type: "OBSScene", host: "127.0.0.1", port: 4455, scene: "Scene" };
+    case "OBSStream":
+      return { type: "OBSStream", host: "127.0.0.1", port: 4455, action: "Toggle" };
+    case "OBSRecord":
+      return { type: "OBSRecord", host: "127.0.0.1", port: 4455, action: "Toggle" };
+    case "OBSSourceVisibility":
+      return { type: "OBSSourceVisibility", host: "127.0.0.1", port: 4455, scene: "Scene", source: "Source" };
+    case "OBSAudio":
+      return { type: "OBSAudio", host: "127.0.0.1", port: 4455, input_name: "Mic/Aux", step: 0.02 };
+    case "OBSStudioMode":
+      return { type: "OBSStudioMode", host: "127.0.0.1", port: 4455 };
+    case "OBSReplayBuffer":
+      return { type: "OBSReplayBuffer", host: "127.0.0.1", port: 4455, action: "Save" };
+    case "OBSVirtualCam":
+      return { type: "OBSVirtualCam", host: "127.0.0.1", port: 4455 };
+    case "OBSTransition":
+      return { type: "OBSTransition", host: "127.0.0.1", port: 4455 };
     default:
       return null;
   }
@@ -228,5 +262,24 @@ export function getCapabilityDisplayName(cap: Capability): string {
       return "URL";
     case "ElgatoKeyLight":
       return "Key Light";
+    // OBS capabilities
+    case "OBSScene":
+      return "OBS Scene";
+    case "OBSStream":
+      return "OBS Stream";
+    case "OBSRecord":
+      return "OBS Record";
+    case "OBSSourceVisibility":
+      return "OBS Source";
+    case "OBSAudio":
+      return "OBS Audio";
+    case "OBSStudioMode":
+      return "Studio Mode";
+    case "OBSReplayBuffer":
+      return "Replay";
+    case "OBSVirtualCam":
+      return "Virtual Cam";
+    case "OBSTransition":
+      return "Transition";
   }
 }

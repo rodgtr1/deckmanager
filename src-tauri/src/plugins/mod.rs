@@ -4,3 +4,6 @@
 
 #[cfg(feature = "plugin-elgato")]
 pub mod elgato;
+
+#[cfg(feature = "plugin-obs")]
+pub mod obs;

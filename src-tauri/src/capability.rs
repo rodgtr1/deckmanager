@@ -3,12 +3,41 @@ use serde::{Deserialize, Serialize};
 /// Brightness change percentage per encoder tick for Key Lights
 pub const KEY_LIGHT_BRIGHTNESS_STEP: i32 = 2;
 
+/// Volume change percentage per encoder tick for OBS Audio
+pub const OBS_AUDIO_STEP: f32 = 0.02;
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum KeyLightAction {
     Toggle,
     On,
     Off,
     SetBrightness, // Uses encoder delta
+}
+
+/// Actions for OBS streaming control
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum OBSStreamAction {
+    Toggle,
+    Start,
+    Stop,
+}
+
+/// Actions for OBS recording control
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum OBSRecordAction {
+    Toggle,
+    Start,
+    Stop,
+    TogglePause,
+}
+
+/// Actions for OBS replay buffer control
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum OBSReplayAction {
+    Toggle,
+    Start,
+    Stop,
+    Save,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -51,10 +80,112 @@ pub enum Capability {
         port: u16,
         action: KeyLightAction,
     },
+    /// OBS: Switch to a specific scene
+    OBSScene {
+        #[serde(default = "default_obs_host")]
+        host: String,
+        #[serde(default = "default_obs_port")]
+        port: u16,
+        #[serde(default)]
+        password: Option<String>,
+        scene: String,
+    },
+    /// OBS: Start/Stop/Toggle streaming
+    OBSStream {
+        #[serde(default = "default_obs_host")]
+        host: String,
+        #[serde(default = "default_obs_port")]
+        port: u16,
+        #[serde(default)]
+        password: Option<String>,
+        action: OBSStreamAction,
+    },
+    /// OBS: Start/Stop/Toggle/Pause recording
+    OBSRecord {
+        #[serde(default = "default_obs_host")]
+        host: String,
+        #[serde(default = "default_obs_port")]
+        port: u16,
+        #[serde(default)]
+        password: Option<String>,
+        action: OBSRecordAction,
+    },
+    /// OBS: Toggle source visibility
+    OBSSourceVisibility {
+        #[serde(default = "default_obs_host")]
+        host: String,
+        #[serde(default = "default_obs_port")]
+        port: u16,
+        #[serde(default)]
+        password: Option<String>,
+        scene: String,
+        source: String,
+    },
+    /// OBS: Audio volume (encoder) and mute (press)
+    OBSAudio {
+        #[serde(default = "default_obs_host")]
+        host: String,
+        #[serde(default = "default_obs_port")]
+        port: u16,
+        #[serde(default)]
+        password: Option<String>,
+        input_name: String,
+        #[serde(default = "default_obs_audio_step")]
+        step: f32,
+    },
+    /// OBS: Toggle Studio Mode
+    OBSStudioMode {
+        #[serde(default = "default_obs_host")]
+        host: String,
+        #[serde(default = "default_obs_port")]
+        port: u16,
+        #[serde(default)]
+        password: Option<String>,
+    },
+    /// OBS: Replay buffer control
+    OBSReplayBuffer {
+        #[serde(default = "default_obs_host")]
+        host: String,
+        #[serde(default = "default_obs_port")]
+        port: u16,
+        #[serde(default)]
+        password: Option<String>,
+        action: OBSReplayAction,
+    },
+    /// OBS: Toggle virtual camera
+    OBSVirtualCam {
+        #[serde(default = "default_obs_host")]
+        host: String,
+        #[serde(default = "default_obs_port")]
+        port: u16,
+        #[serde(default)]
+        password: Option<String>,
+    },
+    /// OBS: Trigger Studio Mode transition
+    OBSTransition {
+        #[serde(default = "default_obs_host")]
+        host: String,
+        #[serde(default = "default_obs_port")]
+        port: u16,
+        #[serde(default)]
+        password: Option<String>,
+    },
 }
 
 fn default_key_light_port() -> u16 {
     9123
+}
+
+fn default_obs_host() -> String {
+    "127.0.0.1".to_string()
+}
+
+fn default_obs_port() -> u16 {
+    4455
+}
+
+fn default_obs_audio_step() -> f32 {
+    OBS_AUDIO_STEP
 }
 
 /// Effects produced when a capability is triggered.
@@ -78,6 +209,25 @@ pub enum CapabilityEffect {
     KeyLightOn { ip: String, port: u16 },
     KeyLightOff { ip: String, port: u16 },
     KeyLightBrightness { ip: String, port: u16, delta: i32 },
+    // OBS effects
+    OBSSetScene { host: String, port: u16, password: Option<String>, scene: String },
+    OBSStreamToggle { host: String, port: u16, password: Option<String> },
+    OBSStreamStart { host: String, port: u16, password: Option<String> },
+    OBSStreamStop { host: String, port: u16, password: Option<String> },
+    OBSRecordToggle { host: String, port: u16, password: Option<String> },
+    OBSRecordStart { host: String, port: u16, password: Option<String> },
+    OBSRecordStop { host: String, port: u16, password: Option<String> },
+    OBSRecordTogglePause { host: String, port: u16, password: Option<String> },
+    OBSToggleSourceVisibility { host: String, port: u16, password: Option<String>, scene: String, source: String },
+    OBSToggleMute { host: String, port: u16, password: Option<String>, input_name: String },
+    OBSVolumeDelta { host: String, port: u16, password: Option<String>, input_name: String, delta: f32 },
+    OBSToggleStudioMode { host: String, port: u16, password: Option<String> },
+    OBSReplayToggle { host: String, port: u16, password: Option<String> },
+    OBSReplayStart { host: String, port: u16, password: Option<String> },
+    OBSReplayStop { host: String, port: u16, password: Option<String> },
+    OBSReplaySave { host: String, port: u16, password: Option<String> },
+    OBSToggleVirtualCam { host: String, port: u16, password: Option<String> },
+    OBSTriggerTransition { host: String, port: u16, password: Option<String> },
 }
 
 #[allow(dead_code)] // Reserved for future effect-based dispatch
@@ -106,6 +256,19 @@ impl Capability {
                         ip: ip.clone(),
                         port: *port,
                         delta: delta as i32 * KEY_LIGHT_BRIGHTNESS_STEP,
+                    })
+                }
+            }
+            Capability::OBSAudio { host, port, password, input_name, step } => {
+                if delta == 0 {
+                    None
+                } else {
+                    Some(CapabilityEffect::OBSVolumeDelta {
+                        host: host.clone(),
+                        port: *port,
+                        password: password.clone(),
+                        input_name: input_name.clone(),
+                        delta: *step * delta as f32,
                     })
                 }
             }
@@ -150,6 +313,120 @@ impl Capability {
                     }),
                     KeyLightAction::SetBrightness => None, // Handled by encoder
                 }
+            }
+            // OBS capabilities
+            Capability::OBSScene { host, port, password, scene } if pressed => {
+                Some(CapabilityEffect::OBSSetScene {
+                    host: host.clone(),
+                    port: *port,
+                    password: password.clone(),
+                    scene: scene.clone(),
+                })
+            }
+            Capability::OBSStream { host, port, password, action } if pressed => {
+                match action {
+                    OBSStreamAction::Toggle => Some(CapabilityEffect::OBSStreamToggle {
+                        host: host.clone(),
+                        port: *port,
+                        password: password.clone(),
+                    }),
+                    OBSStreamAction::Start => Some(CapabilityEffect::OBSStreamStart {
+                        host: host.clone(),
+                        port: *port,
+                        password: password.clone(),
+                    }),
+                    OBSStreamAction::Stop => Some(CapabilityEffect::OBSStreamStop {
+                        host: host.clone(),
+                        port: *port,
+                        password: password.clone(),
+                    }),
+                }
+            }
+            Capability::OBSRecord { host, port, password, action } if pressed => {
+                match action {
+                    OBSRecordAction::Toggle => Some(CapabilityEffect::OBSRecordToggle {
+                        host: host.clone(),
+                        port: *port,
+                        password: password.clone(),
+                    }),
+                    OBSRecordAction::Start => Some(CapabilityEffect::OBSRecordStart {
+                        host: host.clone(),
+                        port: *port,
+                        password: password.clone(),
+                    }),
+                    OBSRecordAction::Stop => Some(CapabilityEffect::OBSRecordStop {
+                        host: host.clone(),
+                        port: *port,
+                        password: password.clone(),
+                    }),
+                    OBSRecordAction::TogglePause => Some(CapabilityEffect::OBSRecordTogglePause {
+                        host: host.clone(),
+                        port: *port,
+                        password: password.clone(),
+                    }),
+                }
+            }
+            Capability::OBSSourceVisibility { host, port, password, scene, source } if pressed => {
+                Some(CapabilityEffect::OBSToggleSourceVisibility {
+                    host: host.clone(),
+                    port: *port,
+                    password: password.clone(),
+                    scene: scene.clone(),
+                    source: source.clone(),
+                })
+            }
+            Capability::OBSAudio { host, port, password, input_name, .. } if pressed => {
+                Some(CapabilityEffect::OBSToggleMute {
+                    host: host.clone(),
+                    port: *port,
+                    password: password.clone(),
+                    input_name: input_name.clone(),
+                })
+            }
+            Capability::OBSStudioMode { host, port, password } if pressed => {
+                Some(CapabilityEffect::OBSToggleStudioMode {
+                    host: host.clone(),
+                    port: *port,
+                    password: password.clone(),
+                })
+            }
+            Capability::OBSReplayBuffer { host, port, password, action } if pressed => {
+                match action {
+                    OBSReplayAction::Toggle => Some(CapabilityEffect::OBSReplayToggle {
+                        host: host.clone(),
+                        port: *port,
+                        password: password.clone(),
+                    }),
+                    OBSReplayAction::Start => Some(CapabilityEffect::OBSReplayStart {
+                        host: host.clone(),
+                        port: *port,
+                        password: password.clone(),
+                    }),
+                    OBSReplayAction::Stop => Some(CapabilityEffect::OBSReplayStop {
+                        host: host.clone(),
+                        port: *port,
+                        password: password.clone(),
+                    }),
+                    OBSReplayAction::Save => Some(CapabilityEffect::OBSReplaySave {
+                        host: host.clone(),
+                        port: *port,
+                        password: password.clone(),
+                    }),
+                }
+            }
+            Capability::OBSVirtualCam { host, port, password } if pressed => {
+                Some(CapabilityEffect::OBSToggleVirtualCam {
+                    host: host.clone(),
+                    port: *port,
+                    password: password.clone(),
+                })
+            }
+            Capability::OBSTransition { host, port, password } if pressed => {
+                Some(CapabilityEffect::OBSTriggerTransition {
+                    host: host.clone(),
+                    port: *port,
+                    password: password.clone(),
+                })
             }
             _ => None,
         }

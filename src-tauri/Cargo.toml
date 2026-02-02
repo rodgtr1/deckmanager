@@ -15,11 +15,11 @@ name = "tauri_app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [features]
-default = ["plugin-elgato"]
+default = ["plugin-elgato", "plugin-obs"]
 
 # App plugins (optional)
 plugin-elgato = []
-# plugin-obs = ["tungstenite"]       # OBS Studio integration (future)
+plugin-obs = ["tungstenite", "sha2", "base64"]  # OBS Studio integration
 # plugin-spotify = ["rspotify"]      # Spotify control (future)
 # plugin-homeassistant = []          # Home Assistant (future)
 
@@ -45,3 +45,6 @@ image = "0.25"
 imageproc = "0.24"
 ab_glyph = "0.2"
 reqwest = { version = "0.12", features = ["blocking", "json"] }
+tungstenite = { version = "0.24", optional = true }
+sha2 = { version = "0.10", optional = true }
+base64 = { version = "0.22", optional = true }

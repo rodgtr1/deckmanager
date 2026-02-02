@@ -66,6 +66,12 @@ fn create_plugin_registry() -> Arc<PluginRegistry> {
         Some(&make_config("elgato", true)),
     );
 
+    #[cfg(feature = "plugin-obs")]
+    registry.register(
+        Box::new(plugins::obs::OBSPlugin::new()),
+        Some(&make_config("obs", false)),  // Default disabled until user enables
+    );
+
     Arc::new(registry)
 }
 
