@@ -118,9 +118,11 @@ install_from_source() {
 
     # Check if we're already in the repo directory
     local build_dir
+    local in_place=false
     if [[ -f "PKGBUILD" && -f "src-tauri/tauri.conf.json" ]]; then
         info "Already in repo directory, building in place..."
         build_dir="$(pwd)"
+        in_place=true
     else
         # Clone repo
         build_dir="/tmp/deckmanager-build"
@@ -161,9 +163,11 @@ install_from_source() {
             ;;
     esac
 
-    # Cleanup
-    cd /
-    rm -rf "$build_dir"
+    # Cleanup (only if we cloned to temp directory, with safety check)
+    if [[ "$in_place" == false && "$build_dir" == "/tmp/deckmanager-build" ]]; then
+        cd /
+        rm -rf "$build_dir"
+    fi
 
     success "Deck Manager installed successfully!"
 }
