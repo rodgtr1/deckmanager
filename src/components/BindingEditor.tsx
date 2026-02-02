@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import {
   InputRef,
@@ -9,6 +9,7 @@ import {
   getInputDisplayName,
 } from "../types";
 import IconBrowser from "./IconBrowser";
+import { isSvgUrl, colorizeSvg } from "../utils/svg";
 
 interface BindingEditorProps {
   selectedInput: InputRef | null;
@@ -48,6 +49,10 @@ export default function BindingEditor({
   const [iconBrowserTarget, setIconBrowserTarget] = useState<"default" | "alt">("default");
   const [keyLightIp, setKeyLightIp] = useState<string>("192.168.1.100");
   const [commandToggle, setCommandToggle] = useState<boolean>(false);
+  const [iconColor, setIconColor] = useState<string>("#ffffff");
+  const [iconColorAlt, setIconColorAlt] = useState<string>("#ffffff");
+  const [originalSvgUrl, setOriginalSvgUrl] = useState<string>("");
+  const [originalSvgUrlAlt, setOriginalSvgUrlAlt] = useState<string>("");
 
   // Get current binding for selected input on current page
   const currentBinding = selectedInput
@@ -122,6 +127,10 @@ export default function BindingEditor({
       setShowLabel(false);
       setKeyLightIp("192.168.1.100");
       setCommandToggle(false);
+      setOriginalSvgUrl("");
+      setOriginalSvgUrlAlt("");
+      setIconColor("#ffffff");
+      setIconColorAlt("#ffffff");
     }
   }, [currentBinding, selectedInput]);
 
@@ -130,13 +139,46 @@ export default function BindingEditor({
     setShowIconBrowser(true);
   };
 
-  const handleIconSelect = (iconUrl: string) => {
+  const handleIconSelect = async (iconUrl: string) => {
     if (iconBrowserTarget === "default") {
-      setButtonImage(iconUrl);
+      if (isSvgUrl(iconUrl)) {
+        setOriginalSvgUrl(iconUrl);
+        // Colorize with current color
+        const colorized = await colorizeSvg(iconUrl, iconColor);
+        setButtonImage(colorized);
+      } else {
+        setOriginalSvgUrl("");
+        setButtonImage(iconUrl);
+      }
     } else {
-      setButtonImageAlt(iconUrl);
+      if (isSvgUrl(iconUrl)) {
+        setOriginalSvgUrlAlt(iconUrl);
+        const colorized = await colorizeSvg(iconUrl, iconColorAlt);
+        setButtonImageAlt(colorized);
+      } else {
+        setOriginalSvgUrlAlt("");
+        setButtonImageAlt(iconUrl);
+      }
     }
   };
+
+  // Handle color change for default icon
+  const handleColorChange = useCallback(async (newColor: string) => {
+    setIconColor(newColor);
+    if (originalSvgUrl) {
+      const colorized = await colorizeSvg(originalSvgUrl, newColor);
+      setButtonImage(colorized);
+    }
+  }, [originalSvgUrl]);
+
+  // Handle color change for alt icon
+  const handleColorChangeAlt = useCallback(async (newColor: string) => {
+    setIconColorAlt(newColor);
+    if (originalSvgUrlAlt) {
+      const colorized = await colorizeSvg(originalSvgUrlAlt, newColor);
+      setButtonImageAlt(colorized);
+    }
+  }, [originalSvgUrlAlt]);
 
   const handleSave = () => {
     if (!selectedInput || !selectedCapabilityId) return;
@@ -238,6 +280,10 @@ export default function BindingEditor({
     setButtonImage("");
     setButtonImageAlt("");
     setShowLabel(false);
+    setOriginalSvgUrl("");
+    setOriginalSvgUrlAlt("");
+    setIconColor("#ffffff");
+    setIconColorAlt("#ffffff");
   };
 
   // Get preview URL for button image
@@ -488,6 +534,17 @@ export default function BindingEditor({
                 {previewUrl && (
                   <div className="image-preview-container">
                     <img src={previewUrl} alt="Button preview" className="image-preview" />
+                    {originalSvgUrl && (
+                      <div className="color-picker-inline">
+                        <label htmlFor="icon-color">Color:</label>
+                        <input
+                          id="icon-color"
+                          type="color"
+                          value={iconColor}
+                          onChange={(e) => handleColorChange(e.target.value)}
+                        />
+                      </div>
+                    )}
                   </div>
                 )}
                 <p className="field-description">
@@ -537,6 +594,17 @@ export default function BindingEditor({
                   {getAltPreviewUrl() && (
                     <div className="image-preview-container">
                       <img src={getAltPreviewUrl()!} alt="Alternate preview" className="image-preview" />
+                      {originalSvgUrlAlt && (
+                        <div className="color-picker-inline">
+                          <label htmlFor="icon-color-alt">Color:</label>
+                          <input
+                            id="icon-color-alt"
+                            type="color"
+                            value={iconColorAlt}
+                            onChange={(e) => handleColorChangeAlt(e.target.value)}
+                          />
+                        </div>
+                      )}
                     </div>
                   )}
                   <p className="field-description">

@@ -690,7 +690,9 @@
 .image-preview-container {
     margin-top: 0.5rem;
     display: flex;
+    align-items: center;
     justify-content: center;
+    gap: 1rem;
 }
 
 .image-preview {
@@ -700,6 +702,38 @@
     border: 1px solid var(--border);
     object-fit: contain;
     background: var(--bg-tertiary);
+}
+
+/* Color Picker Inline */
+.color-picker-inline {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.color-picker-inline label {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+.color-picker-inline input[type="color"] {
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    cursor: pointer;
+    background: transparent;
+}
+
+.color-picker-inline input[type="color"]::-webkit-color-swatch-wrapper {
+    padding: 2px;
+}
+
+.color-picker-inline input[type="color"]::-webkit-color-swatch {
+    border-radius: 2px;
+    border: none;
 }
 
 /* Checkbox Field */
