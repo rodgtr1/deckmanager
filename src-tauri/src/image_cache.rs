@@ -125,23 +125,6 @@ where
     f(cache)
 }
 
-/// Load an image with caching.
-/// Returns cached image if available and valid, otherwise loads and caches.
-pub fn load_cached(source: &str) -> Result<DynamicImage> {
-    // Check cache first
-    if let Some(img) = with_cache(|c| c.get(source)) {
-        return Ok(img);
-    }
-
-    // Load the image
-    let img = load_image_uncached(source)?;
-
-    // Cache it
-    with_cache(|c| c.put(source, img.clone()));
-
-    Ok(img)
-}
-
 /// Load an image without caching (internal use)
 fn load_image_uncached(source: &str) -> Result<DynamicImage> {
     if source.starts_with("http://") || source.starts_with("https://") {

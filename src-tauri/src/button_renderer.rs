@@ -43,11 +43,6 @@ impl ButtonRenderer {
         image::load_from_memory(&bytes).context("Failed to decode image from URL")
     }
 
-    /// Load an image from either a file path or URL (with caching).
-    pub fn load_image(&self, source: &str) -> Result<DynamicImage> {
-        image_cache::load_cached(source)
-    }
-
     /// Resize an image to fit the button dimensions.
     /// Uses aspect-preserving resize and centers the image.
     pub fn resize(&self, img: DynamicImage) -> DynamicImage {
@@ -147,33 +142,6 @@ impl ButtonRenderer {
         Ok(Some(DynamicImage::ImageRgba8(rgba)))
     }
 
-    /// Render a binding's alternate button image (for active states).
-    /// Returns None if no button_image_alt is set.
-    pub fn render_binding_alt(&self, binding: &Binding) -> Result<Option<DynamicImage>> {
-        let image_source = match &binding.button_image_alt {
-            Some(src) if !src.is_empty() => src,
-            _ => return Ok(None),
-        };
-
-        // Load image with optional SVG colorization (use alt color)
-        let img = image_cache::load_cached_with_color(
-            image_source,
-            binding.icon_color_alt.as_deref(),
-            self.button_size.0,
-        )?;
-        let resized = self.resize(img);
-        let mut rgba = resized.to_rgba8();
-
-        // Add label if requested
-        if binding.show_label.unwrap_or(false) {
-            if let Some(label) = &binding.label {
-                self.add_label(&mut rgba, label);
-            }
-        }
-
-        Ok(Some(DynamicImage::ImageRgba8(rgba)))
-    }
-
     /// Create a simple colored background with optional text.
     /// Useful for testing or fallback.
     #[allow(dead_code)]
@@ -227,11 +195,6 @@ impl LcdRenderer {
             font,
             section_size: (section_width, section_height),
         })
-    }
-
-    /// Load an image from either a file path or URL (with caching).
-    pub fn load_image(&self, source: &str) -> Result<DynamicImage> {
-        image_cache::load_cached(source)
     }
 
     /// Resize an image to fit the LCD section dimensions.
@@ -294,30 +257,6 @@ impl LcdRenderer {
             image_source,
             binding.icon_color.as_deref(),
             self.section_size.1, // Use height as target size for LCD
-        )?;
-        let resized = self.resize(img);
-        let mut rgba = resized.to_rgba8();
-
-        if binding.show_label.unwrap_or(false) {
-            if let Some(label) = &binding.label {
-                self.add_label(&mut rgba, label);
-            }
-        }
-
-        Ok(Some(DynamicImage::ImageRgba8(rgba)))
-    }
-
-    /// Render an encoder's alternate LCD section from a binding (for active states).
-    pub fn render_binding_alt(&self, binding: &Binding) -> Result<Option<DynamicImage>> {
-        let image_source = match &binding.button_image_alt {
-            Some(src) if !src.is_empty() => src,
-            _ => return Ok(None),
-        };
-
-        let img = image_cache::load_cached_with_color(
-            image_source,
-            binding.icon_color_alt.as_deref(),
-            self.section_size.1,
         )?;
         let resized = self.resize(img);
         let mut rgba = resized.to_rgba8();
