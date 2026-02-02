@@ -200,7 +200,9 @@ export default function App() {
       buttonImage?: string,
       buttonImageAlt?: string,
       showLabel?: boolean,
-      page?: number
+      page?: number,
+      iconColor?: string,
+      iconColorAlt?: string
     ) => {
       try {
         const params = {
@@ -212,6 +214,8 @@ export default function App() {
           button_image: buttonImage ?? null,
           button_image_alt: buttonImageAlt ?? null,
           show_label: showLabel ?? null,
+          icon_color: iconColor ?? null,
+          icon_color_alt: iconColorAlt ?? null,
         };
         await invoke("set_binding", { params });
         // Refresh bindings and page count
@@ -313,7 +317,10 @@ export default function App() {
       sourceBinding.label,
       sourceBinding.button_image,
       sourceBinding.button_image_alt,
-      sourceBinding.show_label
+      sourceBinding.show_label,
+      currentPage,
+      sourceBinding.icon_color,
+      sourceBinding.icon_color_alt
     );
 
     // For encoders, also copy the paired binding (rotation <-> press)
@@ -333,7 +340,10 @@ export default function App() {
           pressBinding.label,
           pressBinding.button_image,
           pressBinding.button_image_alt,
-          pressBinding.show_label
+          pressBinding.show_label,
+          currentPage,
+          pressBinding.icon_color,
+          pressBinding.icon_color_alt
         );
       }
     } else if (fromInput.type === "EncoderPress" && toInput.type === "EncoderPress") {
@@ -352,7 +362,10 @@ export default function App() {
           rotateBinding.label,
           rotateBinding.button_image,
           rotateBinding.button_image_alt,
-          rotateBinding.show_label
+          rotateBinding.show_label,
+          currentPage,
+          rotateBinding.icon_color,
+          rotateBinding.icon_color_alt
         );
       }
     }

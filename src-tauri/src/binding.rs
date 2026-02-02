@@ -37,6 +37,12 @@ pub struct Binding {
     /// Whether to render label on hardware button
     #[serde(skip_serializing_if = "Option::is_none")]
     pub show_label: Option<bool>,
+    /// Color for SVG icons (hex format, e.g., "#ffffff")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub icon_color: Option<String>,
+    /// Color for alternate SVG icons (hex format, e.g., "#ffffff")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub icon_color_alt: Option<String>,
 }
 
 impl Binding {

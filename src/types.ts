@@ -62,6 +62,8 @@ export interface Binding {
   button_image?: string;     // File path or URL for hardware button (default state)
   button_image_alt?: string; // Alternate image (shown when state is "active", e.g., muted)
   show_label?: boolean;      // Render label on hardware button
+  icon_color?: string;       // Color for SVG icons (hex, e.g., "#ffffff")
+  icon_color_alt?: string;   // Color for alternate SVG icons
 }
 
 // System state for stateful capabilities

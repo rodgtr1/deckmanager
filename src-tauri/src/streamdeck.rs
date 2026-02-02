@@ -360,6 +360,8 @@ fn sync_button_images(
                 button_image: effective_image.map(String::from),
                 button_image_alt: None, // Not needed for rendering
                 show_label: binding.show_label,
+                icon_color: binding.icon_color.clone(),
+                icon_color_alt: binding.icon_color_alt.clone(),
             };
 
             match renderer.render_binding(&render_binding) {
@@ -470,6 +472,8 @@ fn sync_lcd_images(
                     button_image: Some(img_path.to_string()),
                     button_image_alt: None,
                     show_label: binding.show_label,
+                    icon_color: binding.icon_color.clone(),
+                    icon_color_alt: binding.icon_color_alt.clone(),
                 };
 
                 match renderer.render_binding(&render_binding) {

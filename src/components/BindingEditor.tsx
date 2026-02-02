@@ -9,7 +9,7 @@ import {
   getInputDisplayName,
 } from "../types";
 import IconBrowser from "./IconBrowser";
-import { isSvgUrl, colorizeSvg } from "../utils/svg";
+import { isSvgUrl, colorizeSvgForPreview } from "../utils/svg";
 
 interface BindingEditorProps {
   selectedInput: InputRef | null;
@@ -24,7 +24,9 @@ interface BindingEditorProps {
     buttonImage?: string,
     buttonImageAlt?: string,
     showLabel?: boolean,
-    page?: number
+    page?: number,
+    iconColor?: string,
+    iconColorAlt?: string
   ) => void;
   onRemoveBinding: (input: InputRef, page?: number) => void;
 }
@@ -51,8 +53,9 @@ export default function BindingEditor({
   const [commandToggle, setCommandToggle] = useState<boolean>(false);
   const [iconColor, setIconColor] = useState<string>("#ffffff");
   const [iconColorAlt, setIconColorAlt] = useState<string>("#ffffff");
-  const [originalSvgUrl, setOriginalSvgUrl] = useState<string>("");
-  const [originalSvgUrlAlt, setOriginalSvgUrlAlt] = useState<string>("");
+  // Preview URLs (colorized SVG data URLs for UI display)
+  const [previewUrl, setPreviewUrl] = useState<string>("");
+  const [previewUrlAlt, setPreviewUrlAlt] = useState<string>("");
 
   // Get current binding for selected input on current page
   const currentBinding = selectedInput
@@ -86,52 +89,77 @@ export default function BindingEditor({
 
   // Update local state when selection changes
   useEffect(() => {
-    if (currentBinding) {
-      setSelectedCapabilityId(currentBinding.capability.type);
-      setCustomLabel(currentBinding.label || "");
-      setButtonImage(currentBinding.button_image || "");
-      setButtonImageAlt(currentBinding.button_image_alt || "");
-      setShowLabel(currentBinding.show_label || false);
-      if (
-        currentBinding.capability.type === "SystemAudio" ||
-        currentBinding.capability.type === "VolumeUp" ||
-        currentBinding.capability.type === "VolumeDown" ||
-        currentBinding.capability.type === "Microphone" ||
-        currentBinding.capability.type === "MicVolumeUp" ||
-        currentBinding.capability.type === "MicVolumeDown"
-      ) {
-        setStep(currentBinding.capability.step);
+    const loadBinding = async () => {
+      if (currentBinding) {
+        setSelectedCapabilityId(currentBinding.capability.type);
+        setCustomLabel(currentBinding.label || "");
+        setButtonImage(currentBinding.button_image || "");
+        setButtonImageAlt(currentBinding.button_image_alt || "");
+        setShowLabel(currentBinding.show_label || false);
+        setIconColor(currentBinding.icon_color || "#ffffff");
+        setIconColorAlt(currentBinding.icon_color_alt || "#ffffff");
+
+        // Generate preview URLs for SVG icons
+        const imgUrl = currentBinding.button_image || "";
+        const imgColor = currentBinding.icon_color || "#ffffff";
+        if (imgUrl && isSvgUrl(imgUrl)) {
+          const preview = await colorizeSvgForPreview(imgUrl, imgColor);
+          setPreviewUrl(preview);
+        } else {
+          setPreviewUrl("");
+        }
+
+        const altUrl = currentBinding.button_image_alt || "";
+        const altColor = currentBinding.icon_color_alt || "#ffffff";
+        if (altUrl && isSvgUrl(altUrl)) {
+          const preview = await colorizeSvgForPreview(altUrl, altColor);
+          setPreviewUrlAlt(preview);
+        } else {
+          setPreviewUrlAlt("");
+        }
+
+        if (
+          currentBinding.capability.type === "SystemAudio" ||
+          currentBinding.capability.type === "VolumeUp" ||
+          currentBinding.capability.type === "VolumeDown" ||
+          currentBinding.capability.type === "Microphone" ||
+          currentBinding.capability.type === "MicVolumeUp" ||
+          currentBinding.capability.type === "MicVolumeDown"
+        ) {
+          setStep(currentBinding.capability.step);
+        }
+        if (currentBinding.capability.type === "RunCommand") {
+          setCommand(currentBinding.capability.command);
+          setCommandToggle(currentBinding.capability.toggle || false);
+        }
+        if (currentBinding.capability.type === "LaunchApp") {
+          setCommand(currentBinding.capability.command);
+        }
+        if (currentBinding.capability.type === "OpenURL") {
+          setUrl(currentBinding.capability.url);
+        }
+        if (currentBinding.capability.type === "ElgatoKeyLight") {
+          setKeyLightIp(currentBinding.capability.ip);
+          setSelectedCapabilityId("ElgatoKeyLight");
+        }
+      } else {
+        setSelectedCapabilityId("");
+        setStep(0.02);
+        setCommand("");
+        setUrl("https://");
+        setCustomLabel("");
+        setButtonImage("");
+        setButtonImageAlt("");
+        setShowLabel(false);
+        setKeyLightIp("192.168.1.100");
+        setCommandToggle(false);
+        setIconColor("#ffffff");
+        setIconColorAlt("#ffffff");
+        setPreviewUrl("");
+        setPreviewUrlAlt("");
       }
-      if (currentBinding.capability.type === "RunCommand") {
-        setCommand(currentBinding.capability.command);
-        setCommandToggle(currentBinding.capability.toggle || false);
-      }
-      if (currentBinding.capability.type === "LaunchApp") {
-        setCommand(currentBinding.capability.command);
-      }
-      if (currentBinding.capability.type === "OpenURL") {
-        setUrl(currentBinding.capability.url);
-      }
-      if (currentBinding.capability.type === "ElgatoKeyLight") {
-        setKeyLightIp(currentBinding.capability.ip);
-        setSelectedCapabilityId("ElgatoKeyLight");
-      }
-    } else {
-      setSelectedCapabilityId("");
-      setStep(0.02);
-      setCommand("");
-      setUrl("https://");
-      setCustomLabel("");
-      setButtonImage("");
-      setButtonImageAlt("");
-      setShowLabel(false);
-      setKeyLightIp("192.168.1.100");
-      setCommandToggle(false);
-      setOriginalSvgUrl("");
-      setOriginalSvgUrlAlt("");
-      setIconColor("#ffffff");
-      setIconColorAlt("#ffffff");
-    }
+    };
+    loadBinding();
   }, [currentBinding, selectedInput]);
 
   const handleOpenIconBrowser = (target: "default" | "alt") => {
@@ -141,23 +169,22 @@ export default function BindingEditor({
 
   const handleIconSelect = async (iconUrl: string) => {
     if (iconBrowserTarget === "default") {
+      // Store original URL (Rust will handle colorization)
+      setButtonImage(iconUrl);
       if (isSvgUrl(iconUrl)) {
-        setOriginalSvgUrl(iconUrl);
-        // Colorize with current color
-        const colorized = await colorizeSvg(iconUrl, iconColor);
-        setButtonImage(colorized);
+        // Generate colorized preview for UI
+        const colorized = await colorizeSvgForPreview(iconUrl, iconColor);
+        setPreviewUrl(colorized);
       } else {
-        setOriginalSvgUrl("");
-        setButtonImage(iconUrl);
+        setPreviewUrl("");
       }
     } else {
+      setButtonImageAlt(iconUrl);
       if (isSvgUrl(iconUrl)) {
-        setOriginalSvgUrlAlt(iconUrl);
-        const colorized = await colorizeSvg(iconUrl, iconColorAlt);
-        setButtonImageAlt(colorized);
+        const colorized = await colorizeSvgForPreview(iconUrl, iconColorAlt);
+        setPreviewUrlAlt(colorized);
       } else {
-        setOriginalSvgUrlAlt("");
-        setButtonImageAlt(iconUrl);
+        setPreviewUrlAlt("");
       }
     }
   };
@@ -165,20 +192,20 @@ export default function BindingEditor({
   // Handle color change for default icon
   const handleColorChange = useCallback(async (newColor: string) => {
     setIconColor(newColor);
-    if (originalSvgUrl) {
-      const colorized = await colorizeSvg(originalSvgUrl, newColor);
-      setButtonImage(colorized);
+    if (buttonImage && isSvgUrl(buttonImage)) {
+      const colorized = await colorizeSvgForPreview(buttonImage, newColor);
+      setPreviewUrl(colorized);
     }
-  }, [originalSvgUrl]);
+  }, [buttonImage]);
 
   // Handle color change for alt icon
   const handleColorChangeAlt = useCallback(async (newColor: string) => {
     setIconColorAlt(newColor);
-    if (originalSvgUrlAlt) {
-      const colorized = await colorizeSvg(originalSvgUrlAlt, newColor);
-      setButtonImageAlt(colorized);
+    if (buttonImageAlt && isSvgUrl(buttonImageAlt)) {
+      const colorized = await colorizeSvgForPreview(buttonImageAlt, newColor);
+      setPreviewUrlAlt(colorized);
     }
-  }, [originalSvgUrlAlt]);
+  }, [buttonImageAlt]);
 
   const handleSave = () => {
     if (!selectedInput || !selectedCapabilityId) return;
@@ -249,8 +276,11 @@ export default function BindingEditor({
     const image = buttonImage.trim() || undefined;
     const imageAlt = buttonImageAlt.trim() || undefined;
     const showLabelOnButton = showLabel;
+    // Pass icon colors only if image is an SVG
+    const color = image && isSvgUrl(image) ? iconColor : undefined;
+    const colorAlt = imageAlt && isSvgUrl(imageAlt) ? iconColorAlt : undefined;
 
-    onSetBinding(selectedInput, capability, icon, label, image, imageAlt, showLabelOnButton);
+    onSetBinding(selectedInput, capability, icon, label, image, imageAlt, showLabelOnButton, currentPage, color, colorAlt);
 
     // For unified capabilities on encoders, automatically create both rotation and press bindings
     // This applies to SystemAudio, Microphone, and ElgatoKeyLight
@@ -263,11 +293,11 @@ export default function BindingEditor({
       if (selectedInput.type === "Encoder") {
         // Also create EncoderPress binding
         const pressInput: InputRef = { type: "EncoderPress", index: selectedInput.index };
-        onSetBinding(pressInput, capability, icon, label, image, imageAlt, showLabelOnButton);
+        onSetBinding(pressInput, capability, icon, label, image, imageAlt, showLabelOnButton, currentPage, color, colorAlt);
       } else if (selectedInput.type === "EncoderPress") {
         // Also create Encoder binding
         const rotateInput: InputRef = { type: "Encoder", index: selectedInput.index };
-        onSetBinding(rotateInput, capability, icon, label, image, imageAlt, showLabelOnButton);
+        onSetBinding(rotateInput, capability, icon, label, image, imageAlt, showLabelOnButton, currentPage, color, colorAlt);
       }
     }
   };
@@ -280,15 +310,19 @@ export default function BindingEditor({
     setButtonImage("");
     setButtonImageAlt("");
     setShowLabel(false);
-    setOriginalSvgUrl("");
-    setOriginalSvgUrlAlt("");
     setIconColor("#ffffff");
     setIconColorAlt("#ffffff");
+    setPreviewUrl("");
+    setPreviewUrlAlt("");
   };
 
   // Get preview URL for button image
+  // Use colorized preview for SVGs, otherwise use original URL
   const getPreviewUrl = (): string | null => {
     if (!buttonImage) return null;
+    // If we have a colorized SVG preview, use it
+    if (previewUrl) return previewUrl;
+    // For URLs, return as-is
     if (buttonImage.startsWith("http://") || buttonImage.startsWith("https://")) {
       return buttonImage;
     }
@@ -299,6 +333,8 @@ export default function BindingEditor({
   // Get preview URL for alternate button image
   const getAltPreviewUrl = (): string | null => {
     if (!buttonImageAlt) return null;
+    // If we have a colorized SVG preview, use it
+    if (previewUrlAlt) return previewUrlAlt;
     if (buttonImageAlt.startsWith("http://") || buttonImageAlt.startsWith("https://")) {
       return buttonImageAlt;
     }
@@ -371,8 +407,6 @@ export default function BindingEditor({
   const selectedCapability = capabilities.find(
     (c) => c.id === selectedCapabilityId
   );
-
-  const previewUrl = getPreviewUrl();
 
   return (
     <div className="binding-editor">
@@ -531,10 +565,10 @@ export default function BindingEditor({
                     Browse
                   </button>
                 </div>
-                {previewUrl && (
+                {getPreviewUrl() && (
                   <div className="image-preview-container">
-                    <img src={previewUrl} alt="Button preview" className="image-preview" />
-                    {originalSvgUrl && (
+                    <img src={getPreviewUrl()!} alt="Button preview" className="image-preview" />
+                    {buttonImage && isSvgUrl(buttonImage) && (
                       <div className="color-picker-inline">
                         <label htmlFor="icon-color">Color:</label>
                         <input
@@ -594,7 +628,7 @@ export default function BindingEditor({
                   {getAltPreviewUrl() && (
                     <div className="image-preview-container">
                       <img src={getAltPreviewUrl()!} alt="Alternate preview" className="image-preview" />
-                      {originalSvgUrlAlt && (
+                      {buttonImageAlt && isSvgUrl(buttonImageAlt) && (
                         <div className="color-picker-inline">
                           <label htmlFor="icon-color-alt">Color:</label>
                           <input

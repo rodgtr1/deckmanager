@@ -33,7 +33,7 @@ export const colorizeSvgText = (svgText: string, color: string): string => {
 };
 
 /**
- * Convert SVG text to a data URL
+ * Convert SVG text to a data URL (SVG format, for preview)
  */
 export const svgToDataUrl = (svgText: string): string => {
   const base64 = btoa(unescape(encodeURIComponent(svgText)));
@@ -41,9 +41,10 @@ export const svgToDataUrl = (svgText: string): string => {
 };
 
 /**
- * Fetch an SVG from URL, colorize it, and return as a data URL
+ * Fetch an SVG from URL, colorize it, and return as an SVG data URL (for preview)
+ * The actual PNG conversion happens in Rust for hardware rendering
  */
-export const colorizeSvg = async (url: string, color: string): Promise<string> => {
+export const colorizeSvgForPreview = async (url: string, color: string): Promise<string> => {
   try {
     const response = await fetch(url);
     if (!response.ok) throw new Error("Failed to fetch SVG");

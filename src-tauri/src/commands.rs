@@ -76,6 +76,10 @@ pub struct SetBindingParams {
     pub button_image_alt: Option<String>,
     #[serde(default)]
     pub show_label: Option<bool>,
+    #[serde(default)]
+    pub icon_color: Option<String>,
+    #[serde(default)]
+    pub icon_color_alt: Option<String>,
 }
 
 /// Add or update a binding.
@@ -102,6 +106,8 @@ pub fn set_binding(state: State<AppState>, params: SetBindingParams) -> Result<(
         button_image: params.button_image,
         button_image_alt: params.button_image_alt,
         show_label: params.show_label,
+        icon_color: params.icon_color,
+        icon_color_alt: params.icon_color_alt,
     });
 
     // Request button image sync to hardware

@@ -4,7 +4,7 @@
 //! Local files are also cached but can be invalidated if modified.
 
 use anyhow::{Context, Result};
-use image::DynamicImage;
+use image::{DynamicImage, RgbaImage};
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Mutex;
@@ -151,6 +151,127 @@ fn load_image_uncached(source: &str) -> Result<DynamicImage> {
     } else {
         image::open(Path::new(source)).context(format!("Failed to load image: {}", source))
     }
+}
+
+/// Check if a source is an SVG file
+fn is_svg(source: &str) -> bool {
+    source.to_lowercase().ends_with(".svg")
+        || (source.contains("/icons/") && source.contains("lucide"))
+}
+
+/// Colorize SVG text by replacing stroke colors
+fn colorize_svg_text(svg_text: &str, color: &str) -> String {
+    let mut result = svg_text.to_string();
+
+    // Replace stroke and fill colors
+    result = result.replace("stroke=\"currentColor\"", &format!("stroke=\"{}\"", color));
+    result = result.replace("fill=\"currentColor\"", &format!("fill=\"{}\"", color));
+    result = result.replace("stroke=\"#000000\"", &format!("stroke=\"{}\"", color));
+    result = result.replace("stroke=\"#000\"", &format!("stroke=\"{}\"", color));
+    result = result.replace("stroke=\"black\"", &format!("stroke=\"{}\"", color));
+
+    // Add stroke to svg element if not present
+    if !result.contains("stroke=\"") {
+        result = result.replacen("<svg", &format!("<svg stroke=\"{}\"", color), 1);
+    }
+
+    result
+}
+
+/// Load and render an SVG with optional colorization
+fn load_svg(source: &str, color: Option<&str>, target_size: u32) -> Result<DynamicImage> {
+    // Fetch the SVG content
+    let svg_text = if source.starts_with("http://") || source.starts_with("https://") {
+        let response = reqwest::blocking::get(source).context("Failed to fetch SVG from URL")?;
+        response.text().context("Failed to read SVG text")?
+    } else {
+        std::fs::read_to_string(source).context(format!("Failed to read SVG file: {}", source))?
+    };
+
+    // Colorize if color is specified
+    let svg_text = match color {
+        Some(c) => colorize_svg_text(&svg_text, c),
+        None => svg_text,
+    };
+
+    // Parse and render SVG
+    let opts = resvg::usvg::Options::default();
+    let tree = resvg::usvg::Tree::from_str(&svg_text, &opts)
+        .context("Failed to parse SVG")?;
+
+    // Create a pixmap for rendering
+    let size = resvg::tiny_skia::IntSize::from_wh(target_size, target_size)
+        .context("Invalid target size")?;
+    let mut pixmap = resvg::tiny_skia::Pixmap::new(size.width(), size.height())
+        .context("Failed to create pixmap")?;
+
+    // Calculate scale to fit SVG in target size
+    let svg_size = tree.size();
+    let scale = (target_size as f32 / svg_size.width()).min(target_size as f32 / svg_size.height());
+
+    // Center the SVG
+    let x_offset = (target_size as f32 - svg_size.width() * scale) / 2.0;
+    let y_offset = (target_size as f32 - svg_size.height() * scale) / 2.0;
+
+    let transform = resvg::tiny_skia::Transform::from_scale(scale, scale)
+        .post_translate(x_offset, y_offset);
+
+    resvg::render(&tree, transform, &mut pixmap.as_mut());
+
+    // Convert to image::DynamicImage
+    let width = pixmap.width();
+    let height = pixmap.height();
+    let data = pixmap.take();
+
+    // tiny_skia uses premultiplied alpha, convert to straight alpha
+    let rgba_data: Vec<u8> = data
+        .chunks(4)
+        .flat_map(|pixel| {
+            let a = pixel[3] as f32 / 255.0;
+            if a > 0.0 {
+                [
+                    (pixel[0] as f32 / a).min(255.0) as u8,
+                    (pixel[1] as f32 / a).min(255.0) as u8,
+                    (pixel[2] as f32 / a).min(255.0) as u8,
+                    pixel[3],
+                ]
+            } else {
+                [0, 0, 0, 0]
+            }
+        })
+        .collect();
+
+    let img = RgbaImage::from_raw(width, height, rgba_data)
+        .context("Failed to create image from SVG render")?;
+
+    Ok(DynamicImage::ImageRgba8(img))
+}
+
+/// Load an image with optional SVG colorization (with caching).
+/// For SVG files, the color parameter is used to colorize the icon.
+pub fn load_cached_with_color(source: &str, color: Option<&str>, target_size: u32) -> Result<DynamicImage> {
+    // Create cache key including color and size
+    let cache_key = match color {
+        Some(c) => format!("{}@{}@{}", source, c, target_size),
+        None => format!("{}@{}", source, target_size),
+    };
+
+    // Check cache first
+    if let Some(img) = with_cache(|c| c.get(&cache_key)) {
+        return Ok(img);
+    }
+
+    // Load the image
+    let img = if is_svg(source) {
+        load_svg(source, color, target_size)?
+    } else {
+        load_image_uncached(source)?
+    };
+
+    // Cache it
+    with_cache(|c| c.put(&cache_key, img.clone()));
+
+    Ok(img)
 }
 
 /// Clear the image cache (e.g., when bindings change significantly)

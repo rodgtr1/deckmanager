@@ -28,6 +28,9 @@ install=deckmanager.install
 build() {
     cd "$srcdir/../"
 
+    # Clean old bundles to avoid picking up stale .deb files
+    rm -rf src-tauri/target/release/bundle/deb
+
     # Install frontend dependencies
     npm ci
 
@@ -38,8 +41,8 @@ build() {
 package() {
     cd "$srcdir/../"
 
-    # Extract the .deb that Tauri built (like OpenDeck does)
-    local debfile=$(find src-tauri/target/release/bundle/deb -name '*.deb' | head -1)
+    # Extract the .deb that Tauri built (use newest file in case of stale builds)
+    local debfile=$(find src-tauri/target/release/bundle/deb -name '*.deb' -printf '%T@\t%p\n' | sort -rn | head -1 | cut -f2)
 
     if [[ -z "$debfile" ]]; then
         echo "Error: No .deb file found in bundle output"
