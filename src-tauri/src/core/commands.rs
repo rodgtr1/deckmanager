@@ -1,4 +1,9 @@
 //! Command execution capabilities: RunCommand, LaunchApp, OpenURL.
+//!
+//! Security notes:
+//! - RunCommand uses shlex for safe argument parsing (no shell injection)
+//! - LaunchApp validates against shell metacharacters
+//! - OpenURL only allows whitelisted schemes
 
 use crate::binding::{Binding, InputRef};
 use crate::capability::Capability;
@@ -197,14 +202,31 @@ fn run_shell_command(cmd: &str) {
         return;
     }
 
-    #[cfg(debug_assertions)]
-    eprintln!("Executing shell command: {}", cmd);
+    // Parse command using shlex for safe argument handling (prevents shell injection)
+    let args = match shlex::split(cmd) {
+        Some(args) if !args.is_empty() => args,
+        Some(_) => {
+            eprintln!("Warning: Command parsed to empty arguments: {}", cmd);
+            return;
+        }
+        None => {
+            eprintln!("Warning: Failed to parse command (invalid quoting): {}", cmd);
+            return;
+        }
+    };
 
-    match Command::new("sh").args(["-c", cmd]).spawn() {
+    #[cfg(debug_assertions)]
+    eprintln!("Executing command: {:?}", args);
+
+    // Execute directly without shell (no injection possible)
+    match Command::new(&args[0]).args(&args[1..]).spawn() {
         Ok(_) => {}
         Err(e) => eprintln!("Failed to execute command '{}': {}", cmd, e),
     }
 }
+
+/// Characters that could be used for shell injection or command chaining
+const DANGEROUS_CHARS: &[char] = &['$', '`', ';', '|', '&', '>', '<', '(', ')', '{', '}', '[', ']', '!', '\n', '\r'];
 
 fn launch_app(app: &str) {
     let app = app.trim();
@@ -213,10 +235,25 @@ fn launch_app(app: &str) {
         return;
     }
 
-    // Basic validation: reject paths with suspicious patterns
-    if app.contains("..") || (app.starts_with('/') && app.contains(' ')) {
-        eprintln!("Warning: Suspicious application path rejected: {}", app);
+    // Reject any shell metacharacters that could be used for injection
+    if app.chars().any(|c| DANGEROUS_CHARS.contains(&c)) {
+        eprintln!("Warning: Application name contains dangerous characters, rejected: {}", app);
         return;
+    }
+
+    // Reject path traversal attempts
+    if app.contains("..") {
+        eprintln!("Warning: Path traversal rejected: {}", app);
+        return;
+    }
+
+    // For absolute paths, only allow known safe directories
+    if app.starts_with('/') {
+        let allowed_prefixes = ["/usr/bin/", "/usr/local/bin/", "/bin/", "/opt/"];
+        if !allowed_prefixes.iter().any(|prefix| app.starts_with(prefix)) {
+            eprintln!("Warning: Absolute path not in allowed directories: {}", app);
+            return;
+        }
     }
 
     // Rate limit to prevent rapid-fire execution

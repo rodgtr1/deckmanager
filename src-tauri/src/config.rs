@@ -6,6 +6,9 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
+
 /// Current config schema version for future migration support
 const CONFIG_VERSION: u32 = 1;
 
@@ -74,6 +77,14 @@ pub fn save_bindings(bindings: &[Binding]) -> Result<()> {
     // Atomic rename temp to final
     fs::rename(&tmp_path, &path)
         .with_context(|| format!("Failed to finalize config file: {}", path.display()))?;
+
+    // Set restrictive permissions (0600) since config may contain sensitive data like passwords
+    #[cfg(unix)]
+    {
+        let permissions = fs::Permissions::from_mode(0o600);
+        fs::set_permissions(&path, permissions)
+            .with_context(|| format!("Failed to set permissions on config file: {}", path.display()))?;
+    }
 
     Ok(())
 }
@@ -240,8 +251,16 @@ pub fn save_plugin_state(plugin_id: &str, enabled: bool) -> Result<()> {
     let contents = toml::to_string_pretty(&config)
         .context("Failed to serialize plugins config")?;
 
-    fs::write(&path, contents)
+    fs::write(&path, &contents)
         .with_context(|| format!("Failed to write plugins config: {}", path.display()))?;
+
+    // Set restrictive permissions (0600)
+    #[cfg(unix)]
+    {
+        let permissions = fs::Permissions::from_mode(0o600);
+        fs::set_permissions(&path, permissions)
+            .with_context(|| format!("Failed to set permissions on plugins config: {}", path.display()))?;
+    }
 
     Ok(())
 }

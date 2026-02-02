@@ -176,16 +176,16 @@ fn run_event_loop(
             }
         };
 
-        // Get current bindings snapshot and page
-        let bindings = bindings_state
-            .lock()
-            .ok()
-            .map(|b| b.clone())
-            .unwrap_or_default();
+        // Get current page first (quick lock)
         let page = *current_page.lock().unwrap_or_else(|e| e.into_inner());
 
-        // Filter bindings to current page for event handling
-        let page_bindings: Vec<_> = bindings.iter().filter(|b| b.page == page).cloned().collect();
+        // Get bindings for current page only (avoids cloning entire vector)
+        // Only clone bindings that match the current page
+        let page_bindings: Vec<Binding> = bindings_state
+            .lock()
+            .ok()
+            .map(|b| b.iter().filter(|binding| binding.page == page).cloned().collect())
+            .unwrap_or_default();
 
         match input {
             StreamDeckInput::ButtonStateChange(states) => {
@@ -211,7 +211,12 @@ fn run_event_loop(
 
                 // Check for page navigation swipe
                 if let Some(direction) = detect_swipe_direction(start, end) {
-                    let max_binding_page = get_max_page(&bindings);
+                    // Need all bindings for max page calculation (not just current page)
+                    let max_binding_page = bindings_state
+                        .lock()
+                        .ok()
+                        .map(|b| get_max_page(&b))
+                        .unwrap_or(0);
                     // Allow navigation to one empty page beyond the last page with bindings
                     // e.g., if bindings on pages 0,1 -> can navigate to 0, 1, 2 (empty)
                     let max_allowed_page = max_binding_page + 1;
@@ -503,11 +508,13 @@ fn sync_lcd_images(
 }
 
 /// Handle a logical event by dispatching to the plugin registry.
+/// Plugin handlers are spawned in separate threads to avoid blocking the event loop
+/// (important for network-dependent plugins like OBS/Elgato that may timeout).
 fn handle_logical_event(
     event: LogicalEvent,
     bindings: &[Binding],
     system_state: &Arc<Mutex<SystemState>>,
-    plugin_registry: &PluginRegistry,
+    plugin_registry: &Arc<PluginRegistry>,
 ) {
     #[cfg(debug_assertions)]
     eprintln!("handle_logical_event: {:?}, {} bindings on page", event, bindings.len());
@@ -520,11 +527,20 @@ fn handle_logical_event(
         #[cfg(debug_assertions)]
         eprintln!("  -> matched binding: {:?}", binding.capability);
 
-        // Dispatch to plugin registry - it will find the right plugin
-        let handled = plugin_registry.handle_event(&event, binding, system_state);
+        // Clone what we need for the spawned thread
+        let event = event.clone();
+        let binding = binding.clone();
+        let system_state = Arc::clone(system_state);
+        let plugin_registry = Arc::clone(plugin_registry);
 
-        #[cfg(debug_assertions)]
-        eprintln!("  -> handled: {}", handled);
+        // Spawn handler in separate thread to avoid blocking event loop
+        // This is critical for network-dependent plugins (OBS, Elgato) that may timeout
+        std::thread::spawn(move || {
+            let handled = plugin_registry.handle_event(&event, &binding, &system_state);
+
+            #[cfg(debug_assertions)]
+            eprintln!("  -> handled: {}", handled);
+        });
     }
 }
 
