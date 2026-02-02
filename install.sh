@@ -12,7 +12,7 @@
 #      - Fedora: builds .rpm and installs with dnf
 #   5. Installs udev rules for Stream Deck device access
 #   6. Cleans up build directory
-#   7. Optionally sets up autostart
+#   7. Configures autostart (Hyprland/Sway config or XDG desktop entry)
 #
 # FILES MODIFIED:
 #   - /etc/udev/rules.d/70-streamdeck.rules (device permissions)
@@ -180,14 +180,24 @@ install_udev_rules() {
 }
 
 setup_autostart() {
-    read -p "Enable autostart on login? [y/N] " -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        if [[ -f /usr/share/deckmanager/install-autostart.sh ]]; then
-            /usr/share/deckmanager/install-autostart.sh
-        else
-            warn "Autostart script not found. You can set it up manually later."
+    info "Configuring autostart..."
+
+    # Find autostart script (location varies by distro/package format)
+    local autostart_script=""
+    for loc in \
+        "/usr/share/deckmanager/install-autostart.sh" \
+        "/usr/lib/deckmanager/scripts/install-autostart.sh" \
+        "/usr/lib/Deck Manager/scripts/install-autostart.sh"; do
+        if [[ -f "$loc" ]]; then
+            autostart_script="$loc"
+            break
         fi
+    done
+
+    if [[ -n "$autostart_script" ]]; then
+        "$autostart_script"
+    else
+        warn "Autostart script not found. You may need to configure autostart manually."
     fi
 }
 
@@ -213,14 +223,15 @@ main() {
             ;;
     esac
 
+    setup_autostart
+
     echo ""
     success "Installation complete!"
     echo ""
-    info "Run 'deckmanager' to start the application"
+    info "Deck Manager will start automatically on login"
+    info "To start now: deckmanager &"
     info "If your Stream Deck is plugged in, unplug and replug it"
     echo ""
-
-    setup_autostart
 }
 
 main "$@"
