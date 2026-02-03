@@ -188,6 +188,43 @@ install_udev_rules() {
     success "udev rules installed"
 }
 
+setup_default_binding() {
+    info "Setting up default binding..."
+
+    local config_dir="$HOME/.config/deckmanager"
+    local bindings_file="$config_dir/bindings.toml"
+
+    # Only create if no bindings exist yet
+    if [[ -f "$bindings_file" ]]; then
+        info "Existing bindings found, skipping default setup"
+        return
+    fi
+
+    mkdir -p "$config_dir"
+
+    # Create default binding: Button 0 opens deckmanager settings
+    cat > "$bindings_file" << 'EOF'
+version = 1
+
+# Default binding: Press to open Deck Manager settings
+[[bindings]]
+page = 0
+button_image = "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/homepage.png"
+show_label = true
+label = "Settings"
+
+[bindings.input]
+type = "Button"
+index = 0
+
+[bindings.capability]
+type = "Command"
+command = "deckmanager"
+EOF
+
+    success "Default binding created (Button 0 → Open Settings)"
+}
+
 setup_autostart() {
     info "Configuring autostart..."
 
@@ -232,6 +269,7 @@ main() {
             ;;
     esac
 
+    setup_default_binding
     setup_autostart
 
     echo ""

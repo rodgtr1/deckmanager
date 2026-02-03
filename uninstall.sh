@@ -150,6 +150,15 @@ main() {
     # Remove shared files
     sudo rm -rf /usr/share/deckmanager
 
+    # Clean build artifacts if in repo directory (ensures fresh build on reinstall)
+    if [[ -f "PKGBUILD" ]]; then
+        info "Cleaning build artifacts..."
+        rm -f deckmanager-*.pkg.tar.zst 2>/dev/null || true
+        rm -rf src-tauri/target/release/bundle 2>/dev/null || true
+        rm -f src-tauri/target/release/deckmanager 2>/dev/null || true
+        success "Build artifacts cleaned"
+    fi
+
     echo ""
     success "Deck Manager has been completely removed!"
     echo ""
