@@ -73,3 +73,35 @@ fn is_elgato_device(device: &udev::Device) -> bool {
     }
     false
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::Ordering;
+
+    #[test]
+    fn check_device_connected_returns_false_initially() {
+        // Reset flag to known state
+        DEVICE_CONNECTED_FLAG.store(false, Ordering::SeqCst);
+        assert!(!check_device_connected());
+    }
+
+    #[test]
+    fn check_device_connected_returns_true_after_set() {
+        DEVICE_CONNECTED_FLAG.store(true, Ordering::SeqCst);
+        assert!(check_device_connected());
+    }
+
+    #[test]
+    fn check_device_connected_clears_flag() {
+        DEVICE_CONNECTED_FLAG.store(true, Ordering::SeqCst);
+        assert!(check_device_connected()); // First call returns true
+        assert!(!check_device_connected()); // Second call returns false (flag cleared)
+    }
+
+    #[test]
+    fn elgato_vendor_id_is_correct() {
+        // Elgato's USB vendor ID
+        assert_eq!(ELGATO_VENDOR_ID, "0fd9");
+    }
+}
