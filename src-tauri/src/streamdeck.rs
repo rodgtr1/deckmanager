@@ -2,6 +2,7 @@ use crate::binding::{Binding, InputRef};
 use crate::button_renderer::{button_size_for_kind, encoder_lcd_size_for_kind, ButtonRenderer, LcdRenderer};
 use crate::device::DeviceInfo;
 use crate::events::{ConnectionStatusEvent, PageChangeEvent};
+use crate::hotplug;
 use crate::input_processor::{detect_swipe_direction, InputProcessor, LogicalEvent, SwipeDirection};
 use crate::plugin::PluginRegistry;
 use crate::state_manager::SystemState;
@@ -13,8 +14,10 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 
-/// Interval for checking device reconnection
-const RECONNECT_INTERVAL: Duration = Duration::from_secs(2);
+/// Interval for checking device reconnection when polling
+const RECONNECT_POLL_INTERVAL: Duration = Duration::from_millis(100);
+/// Maximum time to wait before retrying connection
+const RECONNECT_MAX_WAIT: Duration = Duration::from_secs(2);
 
 /// Timeout for reading input from Stream Deck (affects responsiveness)
 const INPUT_POLL_TIMEOUT: Duration = Duration::from_millis(50);
@@ -84,8 +87,25 @@ pub fn run(
             }
         }
 
-        // Wait before trying to reconnect
-        std::thread::sleep(RECONNECT_INTERVAL);
+        // Wait before trying to reconnect, but check hotplug flag frequently
+        // to respond quickly when a device is connected
+        wait_for_device_or_timeout();
+    }
+}
+
+/// Wait for either a hotplug event or timeout.
+/// This allows us to respond quickly when a device is connected via hotplug
+/// instead of waiting the full reconnect interval.
+fn wait_for_device_or_timeout() {
+    let mut elapsed = Duration::ZERO;
+    while elapsed < RECONNECT_MAX_WAIT {
+        // Check if hotplug detected a device connection
+        if hotplug::check_device_connected() {
+            eprintln!("Hotplug detected device, attempting immediate reconnection...");
+            return;
+        }
+        std::thread::sleep(RECONNECT_POLL_INTERVAL);
+        elapsed += RECONNECT_POLL_INTERVAL;
     }
 }
 

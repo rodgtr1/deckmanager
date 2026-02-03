@@ -10,6 +10,7 @@ mod core;
 mod device;
 mod events;
 mod hid;
+mod hotplug;
 mod image_cache;
 mod input_processor;
 mod plugin;
@@ -133,6 +134,9 @@ pub fn run_with_options(start_hidden: bool) {
                     let _ = window.hide();
                 }
             }
+
+            // Start hotplug monitor for device connection events
+            hotplug::start_hotplug_monitor();
 
             // Start Stream Deck thread
             std::thread::spawn(move || {
