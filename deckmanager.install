@@ -23,8 +23,7 @@ post_upgrade() {
 
 pre_remove() {
     echo ":: Stopping deckmanager..."
-    pkill -f deckmanager-bin 2>/dev/null || true
-    sleep 1
+    pkill -9 -f deckmanager-bin 2>/dev/null || true
 }
 
 post_remove() {
