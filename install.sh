@@ -132,6 +132,10 @@ install_from_source() {
         cd "$build_dir"
     fi
 
+    # Clean stale build artifacts to ensure fresh build
+    info "Cleaning stale build artifacts..."
+    rm -rf src-tauri/target/release/bundle
+
     # Build and install based on distro
     case $(detect_distro) in
         arch)

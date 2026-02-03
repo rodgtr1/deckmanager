@@ -28,8 +28,8 @@ install=deckmanager.install
 build() {
     cd "$srcdir/../"
 
-    # Clean old bundles to avoid picking up stale .deb files
-    rm -rf src-tauri/target/release/bundle/deb
+    # Clean stale build artifacts to ensure fresh build
+    rm -rf src-tauri/target/release/bundle
 
     # Install frontend dependencies
     npm ci
