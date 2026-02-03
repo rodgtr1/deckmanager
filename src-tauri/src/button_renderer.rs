@@ -252,22 +252,30 @@ impl LcdRenderer {
             _ => return Ok(None),
         };
 
+        let (section_w, section_h) = self.section_size;
+
         // Load image with optional SVG colorization
+        // Use 65% of height for icon to leave padding around edges
+        let icon_size = (section_h as f32 * 0.65) as u32;
         let img = image_cache::load_cached_with_color(
             image_source,
             binding.icon_color.as_deref(),
-            self.section_size.1, // Use height as target size for LCD
+            icon_size,
         )?;
-        let resized = self.resize(img);
-        let mut rgba = resized.to_rgba8();
+
+        // Center the icon on a black canvas (don't scale up)
+        let mut canvas = RgbaImage::from_pixel(section_w, section_h, Rgba([0, 0, 0, 255]));
+        let x_offset = (section_w.saturating_sub(img.width())) / 2;
+        let y_offset = (section_h.saturating_sub(img.height())) / 2;
+        image::imageops::overlay(&mut canvas, &img.to_rgba8(), x_offset as i64, y_offset as i64);
 
         if binding.show_label.unwrap_or(false) {
             if let Some(label) = &binding.label {
-                self.add_label(&mut rgba, label);
+                self.add_label(&mut canvas, label);
             }
         }
 
-        Ok(Some(DynamicImage::ImageRgba8(rgba)))
+        Ok(Some(DynamicImage::ImageRgba8(canvas)))
     }
 
     /// Create a black/empty section.

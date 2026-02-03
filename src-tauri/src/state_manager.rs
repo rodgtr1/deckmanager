@@ -39,7 +39,7 @@ pub struct OBSState {
     pub source_visibility: HashMap<String, bool>,
 }
 use std::process::Command;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
@@ -116,11 +116,17 @@ pub fn check_playing_state() -> bool {
 }
 
 /// Get current system state (without key lights - those are checked separately)
+/// Runs state checks in parallel for better performance.
 pub fn get_current_state() -> SystemState {
+    // Run all state checks in parallel
+    let mute_handle = std::thread::spawn(check_mute_state);
+    let mic_handle = std::thread::spawn(check_mic_mute_state);
+    let playing_handle = std::thread::spawn(check_playing_state);
+
     SystemState {
-        is_muted: check_mute_state(),
-        is_mic_muted: check_mic_mute_state(),
-        is_playing: check_playing_state(),
+        is_muted: mute_handle.join().unwrap_or(false),
+        is_mic_muted: mic_handle.join().unwrap_or(false),
+        is_playing: playing_handle.join().unwrap_or(false),
         key_lights: HashMap::new(),
         toggle_states: HashMap::new(),
         obs_states: HashMap::new(),
@@ -149,6 +155,9 @@ pub struct StateChangeEvent {
     pub is_playing: bool,
     pub key_lights: HashMap<String, KeyLightState>,
 }
+
+/// Tick counter for periodic polling (every 20 ticks = 2 seconds)
+static TICK_COUNT: AtomicU32 = AtomicU32::new(0);
 
 /// Run the state polling loop
 pub fn run_state_poller(app: AppHandle, state: Arc<Mutex<SystemState>>) {
@@ -189,35 +198,32 @@ pub fn run_state_poller(app: AppHandle, state: Arc<Mutex<SystemState>>) {
         std::thread::sleep(check_interval);
 
         // Every 2 seconds, do a regular poll
-        static mut TICK_COUNT: u32 = 0;
-        unsafe {
-            TICK_COUNT += 1;
-            if TICK_COUNT >= 20 { // 20 * 100ms = 2s
-                TICK_COUNT = 0;
+        let tick = TICK_COUNT.fetch_add(1, Ordering::Relaxed);
+        if tick >= 19 { // 20 * 100ms = 2s (0-19 = 20 ticks)
+            TICK_COUNT.store(0, Ordering::Relaxed);
 
-                let mut new_state = get_current_state();
-                let mut current = state.lock().unwrap();
+            let mut new_state = get_current_state();
+            let mut current = state.lock().unwrap();
 
-                // Copy over existing key light states
-                new_state.key_lights = current.key_lights.clone();
+            // Copy over existing key light states
+            new_state.key_lights = current.key_lights.clone();
 
-                let state_changed = new_state.is_muted != current.is_muted
-                    || new_state.is_mic_muted != current.is_mic_muted
-                    || new_state.is_playing != current.is_playing;
+            let state_changed = new_state.is_muted != current.is_muted
+                || new_state.is_mic_muted != current.is_mic_muted
+                || new_state.is_playing != current.is_playing;
 
-                if state_changed {
-                    *current = new_state.clone();
-                    drop(current);
+            if state_changed {
+                *current = new_state.clone();
+                drop(current);
 
-                    let _ = app.emit("state:change", StateChangeEvent {
-                        is_muted: new_state.is_muted,
-                        is_mic_muted: new_state.is_mic_muted,
-                        is_playing: new_state.is_playing,
-                        key_lights: new_state.key_lights,
-                    });
+                let _ = app.emit("state:change", StateChangeEvent {
+                    is_muted: new_state.is_muted,
+                    is_mic_muted: new_state.is_mic_muted,
+                    is_playing: new_state.is_playing,
+                    key_lights: new_state.key_lights,
+                });
 
-                    crate::streamdeck::request_image_sync();
-                }
+                crate::streamdeck::request_image_sync();
             }
         }
     }

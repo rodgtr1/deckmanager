@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "tauri:dev": "GDK_BACKEND=x11 WEBKIT_DISABLE_COMPOSITING_MODE=1 GBM_BACKEND=nvidia-drm GDK_SCALE=1.5 GDK_DPI_SCALE=1.5 tauri dev",
+    "tauri:dev": "pkill -9 deckmanager 2>/dev/null; GDK_BACKEND=x11 WEBKIT_DISABLE_COMPOSITING_MODE=1 GBM_BACKEND=nvidia-drm GDK_SCALE=1.5 GDK_DPI_SCALE=1.5 tauri dev",
     "tauri": "tauri"
   },
   "dependencies": {

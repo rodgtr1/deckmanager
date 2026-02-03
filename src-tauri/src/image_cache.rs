@@ -5,7 +5,8 @@
 
 use anyhow::{Context, Result};
 use image::{DynamicImage, RgbaImage};
-use std::collections::HashMap;
+use lru::LruCache;
+use std::num::NonZeroUsize;
 use std::path::Path;
 use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime};
@@ -15,8 +16,6 @@ struct CacheEntry {
     image: DynamicImage,
     /// When this entry was cached
     cached_at: Instant,
-    /// When this entry was last accessed (for LRU eviction)
-    last_accessed: Instant,
     /// For local files: modification time when cached
     file_mtime: Option<SystemTime>,
 }
@@ -30,26 +29,29 @@ const URL_CACHE_TTL: Duration = Duration::from_secs(300);
 /// Maximum number of entries in the cache (prevents unbounded growth)
 const MAX_CACHE_ENTRIES: usize = 100;
 
-/// Image cache implementation
+/// Image cache implementation using O(1) LRU eviction
 struct ImageCache {
-    entries: HashMap<String, CacheEntry>,
+    entries: LruCache<String, CacheEntry>,
 }
 
 impl ImageCache {
     fn new() -> Self {
         Self {
-            entries: HashMap::new(),
+            entries: LruCache::new(NonZeroUsize::new(MAX_CACHE_ENTRIES).unwrap()),
         }
     }
 
     /// Get a cached image if valid, or None if not cached/expired
     fn get(&mut self, source: &str) -> Option<DynamicImage> {
-        let entry = self.entries.get_mut(source)?;
+        // Use peek to check validity first without promoting
+        let entry = self.entries.peek(source)?;
 
         // Check if entry is still valid
-        if source.starts_with("http://") || source.starts_with("https://") {
+        let is_url = source.starts_with("http://") || source.starts_with("https://");
+        if is_url {
             // URL: check TTL
             if entry.cached_at.elapsed() > URL_CACHE_TTL {
+                self.entries.pop(source);
                 return None;
             }
         } else {
@@ -58,6 +60,7 @@ impl ImageCache {
                 if let Ok(metadata) = std::fs::metadata(source) {
                     if let Ok(current_mtime) = metadata.modified() {
                         if current_mtime != cached_mtime {
+                            self.entries.pop(source);
                             return None; // File was modified
                         }
                     }
@@ -65,28 +68,12 @@ impl ImageCache {
             }
         }
 
-        // Update last accessed time for LRU tracking
-        entry.last_accessed = Instant::now();
-
-        Some(entry.image.clone())
+        // Entry is valid, get it (which promotes it in LRU order)
+        self.entries.get(source).map(|e| e.image.clone())
     }
 
-    /// Store an image in the cache, evicting oldest entries if at capacity
+    /// Store an image in the cache (LRU eviction happens automatically)
     fn put(&mut self, source: &str, image: DynamicImage) {
-        // Evict oldest entries if at capacity (LRU eviction)
-        while self.entries.len() >= MAX_CACHE_ENTRIES {
-            if let Some(oldest_key) = self
-                .entries
-                .iter()
-                .min_by_key(|(_, e)| e.last_accessed)
-                .map(|(k, _)| k.clone())
-            {
-                self.entries.remove(&oldest_key);
-            } else {
-                break;
-            }
-        }
-
         let file_mtime = if !source.starts_with("http://") && !source.starts_with("https://") {
             // Get file modification time for local files
             std::fs::metadata(source)
@@ -96,13 +83,11 @@ impl ImageCache {
             None
         };
 
-        let now = Instant::now();
-        self.entries.insert(
+        self.entries.put(
             source.to_string(),
             CacheEntry {
                 image,
-                cached_at: now,
-                last_accessed: now,
+                cached_at: Instant::now(),
                 file_mtime,
             },
         );
@@ -291,12 +276,10 @@ mod tests {
         let cache_entry = CacheEntry {
             image: DynamicImage::new_rgba8(1, 1),
             cached_at: now,
-            last_accessed: now,
             file_mtime: None,
         };
 
         assert!(cache_entry.cached_at.elapsed() < Duration::from_secs(1));
-        assert!(cache_entry.last_accessed.elapsed() < Duration::from_secs(1));
     }
 
     #[test]
@@ -347,27 +330,27 @@ mod tests {
     fn test_lru_eviction() {
         let mut cache = ImageCache::new();
 
-        // Fill cache to just under max
-        for i in 0..(MAX_CACHE_ENTRIES - 1) {
+        // Fill cache to max
+        for i in 0..MAX_CACHE_ENTRIES {
             cache.put(&format!("key{}", i), DynamicImage::new_rgba8(1, 1));
         }
 
-        assert_eq!(cache.entries.len(), MAX_CACHE_ENTRIES - 1);
+        assert_eq!(cache.entries.len(), MAX_CACHE_ENTRIES);
 
         // Access first entry to make it recently used
         let _ = cache.get("key0");
 
-        // Add one more to hit max
+        // Add one more - should evict the least recently used (key1, not key0)
         cache.put("new_key", DynamicImage::new_rgba8(1, 1));
 
-        // Should still be at max (no eviction needed yet since we had room)
-        assert!(cache.entries.len() <= MAX_CACHE_ENTRIES);
+        // Should still be at max
+        assert_eq!(cache.entries.len(), MAX_CACHE_ENTRIES);
 
-        // Add another - should evict oldest (key1, not key0 since we accessed it)
-        cache.put("another_key", DynamicImage::new_rgba8(1, 1));
-
-        assert!(cache.entries.len() <= MAX_CACHE_ENTRIES);
         // key0 should still be there since we accessed it
         assert!(cache.get("key0").is_some());
+        // key1 should have been evicted (it was the LRU after we accessed key0)
+        assert!(cache.entries.peek(&"key1".to_string()).is_none());
+        // new_key should be there
+        assert!(cache.get("new_key").is_some());
     }
 }

@@ -6,6 +6,7 @@ import CapabilityBrowser from "./components/CapabilityBrowser";
 import DeviceLayout from "./components/DeviceLayout";
 import BindingEditor from "./components/BindingEditor";
 import PluginsPage from "./components/PluginsPage";
+import ErrorBoundary from "./components/ErrorBoundary";
 import {
   DeviceInfo,
   InputRef,
@@ -396,50 +397,62 @@ export default function App() {
   }
 
   return (
-    <div className="app">
-      <header className="app-header">
-        <h1>ArchDeck</h1>
-      </header>
+    <ErrorBoundary>
+      <div className="app">
+        <header className="app-header">
+          <h1>ArchDeck</h1>
+        </header>
 
-      {error && <div className="error-banner">{error}</div>}
+        {error && <div className="error-banner">{error}</div>}
 
-      <div className="app-container">
-        <ActivityBar currentView={currentView} onViewChange={setCurrentView} />
+        <div className="app-container">
+          <ActivityBar currentView={currentView} onViewChange={setCurrentView} />
 
-        {currentView === "device" ? (
-          <main className="app-main three-column">
-            <CapabilityBrowser
-              capabilities={capabilities}
-              onSelect={handleCapabilitySelect}
-              selectedCapabilityId={selectedCapabilityId}
-            />
+          <ErrorBoundary>
+            {currentView === "device" ? (
+              <main className="app-main three-column">
+                <ErrorBoundary>
+                  <CapabilityBrowser
+                    capabilities={capabilities}
+                    onSelect={handleCapabilitySelect}
+                    selectedCapabilityId={selectedCapabilityId}
+                  />
+                </ErrorBoundary>
 
-            <DeviceLayout
-              device={device}
-              bindings={bindings}
-              selectedInput={selectedInput}
-              activeInputs={activeInputs}
-              systemState={systemState}
-              currentPage={currentPage}
-              pageCount={pageCount}
-              onSelectInput={setSelectedInput}
-              onDrop={handleDrop}
-              onCopyBinding={handleCopyBinding}
-            />
+                <ErrorBoundary>
+                  <DeviceLayout
+                    device={device}
+                    bindings={bindings}
+                    selectedInput={selectedInput}
+                    activeInputs={activeInputs}
+                    systemState={systemState}
+                    currentPage={currentPage}
+                    pageCount={pageCount}
+                    onSelectInput={setSelectedInput}
+                    onDrop={handleDrop}
+                    onCopyBinding={handleCopyBinding}
+                  />
+                </ErrorBoundary>
 
-            <BindingEditor
-              selectedInput={selectedInput}
-              bindings={bindings}
-              capabilities={capabilities}
-              currentPage={currentPage}
-              onSetBinding={handleSetBinding}
-              onRemoveBinding={handleRemoveBinding}
-            />
-          </main>
-        ) : (
-          <PluginsPage onPluginToggle={refreshCapabilities} />
-        )}
+                <ErrorBoundary>
+                  <BindingEditor
+                    selectedInput={selectedInput}
+                    bindings={bindings}
+                    capabilities={capabilities}
+                    currentPage={currentPage}
+                    onSetBinding={handleSetBinding}
+                    onRemoveBinding={handleRemoveBinding}
+                  />
+                </ErrorBoundary>
+              </main>
+            ) : (
+              <ErrorBoundary>
+                <PluginsPage onPluginToggle={refreshCapabilities} />
+              </ErrorBoundary>
+            )}
+          </ErrorBoundary>
+        </div>
       </div>
-    </div>
+    </ErrorBoundary>
   );
 }

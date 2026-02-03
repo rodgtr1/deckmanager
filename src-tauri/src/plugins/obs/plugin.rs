@@ -14,6 +14,17 @@ use crate::streamdeck::request_image_sync;
 use std::any::Any;
 use std::sync::{Arc, Mutex, OnceLock};
 
+/// Check if an event is a press event (button down or encoder press down)
+fn is_press_event(event: &LogicalEvent) -> bool {
+    matches!(
+        event,
+        LogicalEvent::Button(e) if e.pressed
+    ) || matches!(
+        event,
+        LogicalEvent::EncoderPress(e) if e.pressed
+    )
+}
+
 /// Global debounced OBS audio controller
 static OBS_AUDIO_CONTROLLER: OnceLock<OBSAudioController> = OnceLock::new();
 
@@ -235,153 +246,66 @@ impl Plugin for OBSPlugin {
         binding: &Binding,
         system_state: &Arc<Mutex<SystemState>>,
     ) -> bool {
-        match (&binding.capability, event) {
-            // ─────────────────────────────────────────────────────────────
-            // OBSScene
-            // ─────────────────────────────────────────────────────────────
-            (Capability::OBSScene { host, port, password, scene }, LogicalEvent::Button(e))
-                if e.pressed =>
-            {
-                handle_scene_switch(host, *port, password.clone(), scene, system_state);
-                true
-            }
-            (Capability::OBSScene { host, port, password, scene }, LogicalEvent::EncoderPress(e))
-                if e.pressed =>
-            {
+        match &binding.capability {
+            // OBSScene - press to switch scene
+            Capability::OBSScene { host, port, password, scene } if is_press_event(event) => {
                 handle_scene_switch(host, *port, password.clone(), scene, system_state);
                 true
             }
 
-            // ─────────────────────────────────────────────────────────────
-            // OBSStream
-            // ─────────────────────────────────────────────────────────────
-            (Capability::OBSStream { host, port, password, action }, LogicalEvent::Button(e))
-                if e.pressed =>
-            {
-                handle_stream_action(host, *port, password.clone(), action, system_state);
-                true
-            }
-            (Capability::OBSStream { host, port, password, action }, LogicalEvent::EncoderPress(e))
-                if e.pressed =>
-            {
+            // OBSStream - press to control streaming
+            Capability::OBSStream { host, port, password, action } if is_press_event(event) => {
                 handle_stream_action(host, *port, password.clone(), action, system_state);
                 true
             }
 
-            // ─────────────────────────────────────────────────────────────
-            // OBSRecord
-            // ─────────────────────────────────────────────────────────────
-            (Capability::OBSRecord { host, port, password, action }, LogicalEvent::Button(e))
-                if e.pressed =>
-            {
-                handle_record_action(host, *port, password.clone(), action, system_state);
-                true
-            }
-            (Capability::OBSRecord { host, port, password, action }, LogicalEvent::EncoderPress(e))
-                if e.pressed =>
-            {
+            // OBSRecord - press to control recording
+            Capability::OBSRecord { host, port, password, action } if is_press_event(event) => {
                 handle_record_action(host, *port, password.clone(), action, system_state);
                 true
             }
 
-            // ─────────────────────────────────────────────────────────────
-            // OBSSourceVisibility
-            // ─────────────────────────────────────────────────────────────
-            (
-                Capability::OBSSourceVisibility { host, port, password, scene, source },
-                LogicalEvent::Button(e),
-            ) if e.pressed => {
-                handle_source_visibility(host, *port, password.clone(), scene, source, system_state);
-                true
-            }
-            (
-                Capability::OBSSourceVisibility { host, port, password, scene, source },
-                LogicalEvent::EncoderPress(e),
-            ) if e.pressed => {
+            // OBSSourceVisibility - press to toggle source visibility
+            Capability::OBSSourceVisibility { host, port, password, scene, source } if is_press_event(event) => {
                 handle_source_visibility(host, *port, password.clone(), scene, source, system_state);
                 true
             }
 
-            // ─────────────────────────────────────────────────────────────
-            // OBSAudio (encoder rotation for volume, press for mute)
-            // ─────────────────────────────────────────────────────────────
-            (Capability::OBSAudio { host, port, password, input_name, step }, LogicalEvent::Encoder(e)) => {
-                handle_audio_volume(host, *port, password.clone(), input_name, *step, e.delta, system_state);
-                true
-            }
-            (Capability::OBSAudio { host, port, password, input_name, .. }, LogicalEvent::Button(e))
-                if e.pressed =>
-            {
-                handle_audio_mute(host, *port, password.clone(), input_name, system_state);
-                true
-            }
-            (Capability::OBSAudio { host, port, password, input_name, .. }, LogicalEvent::EncoderPress(e))
-                if e.pressed =>
-            {
-                handle_audio_mute(host, *port, password.clone(), input_name, system_state);
-                true
+            // OBSAudio - encoder rotation for volume
+            Capability::OBSAudio { host, port, password, input_name, step } => {
+                match event {
+                    LogicalEvent::Encoder(e) => {
+                        handle_audio_volume(host, *port, password.clone(), input_name, *step, e.delta, system_state);
+                        true
+                    }
+                    _ if is_press_event(event) => {
+                        handle_audio_mute(host, *port, password.clone(), input_name, system_state);
+                        true
+                    }
+                    _ => false,
+                }
             }
 
-            // ─────────────────────────────────────────────────────────────
-            // OBSStudioMode
-            // ─────────────────────────────────────────────────────────────
-            (Capability::OBSStudioMode { host, port, password }, LogicalEvent::Button(e))
-                if e.pressed =>
-            {
-                handle_studio_mode(host, *port, password.clone(), system_state);
-                true
-            }
-            (Capability::OBSStudioMode { host, port, password }, LogicalEvent::EncoderPress(e))
-                if e.pressed =>
-            {
+            // OBSStudioMode - press to toggle studio mode
+            Capability::OBSStudioMode { host, port, password } if is_press_event(event) => {
                 handle_studio_mode(host, *port, password.clone(), system_state);
                 true
             }
 
-            // ─────────────────────────────────────────────────────────────
-            // OBSReplayBuffer
-            // ─────────────────────────────────────────────────────────────
-            (Capability::OBSReplayBuffer { host, port, password, action }, LogicalEvent::Button(e))
-                if e.pressed =>
-            {
-                handle_replay_action(host, *port, password.clone(), action, system_state);
-                true
-            }
-            (Capability::OBSReplayBuffer { host, port, password, action }, LogicalEvent::EncoderPress(e))
-                if e.pressed =>
-            {
+            // OBSReplayBuffer - press to control replay buffer
+            Capability::OBSReplayBuffer { host, port, password, action } if is_press_event(event) => {
                 handle_replay_action(host, *port, password.clone(), action, system_state);
                 true
             }
 
-            // ─────────────────────────────────────────────────────────────
-            // OBSVirtualCam
-            // ─────────────────────────────────────────────────────────────
-            (Capability::OBSVirtualCam { host, port, password }, LogicalEvent::Button(e))
-                if e.pressed =>
-            {
-                handle_virtual_cam(host, *port, password.clone(), system_state);
-                true
-            }
-            (Capability::OBSVirtualCam { host, port, password }, LogicalEvent::EncoderPress(e))
-                if e.pressed =>
-            {
+            // OBSVirtualCam - press to toggle virtual camera
+            Capability::OBSVirtualCam { host, port, password } if is_press_event(event) => {
                 handle_virtual_cam(host, *port, password.clone(), system_state);
                 true
             }
 
-            // ─────────────────────────────────────────────────────────────
-            // OBSTransition
-            // ─────────────────────────────────────────────────────────────
-            (Capability::OBSTransition { host, port, password }, LogicalEvent::Button(e))
-                if e.pressed =>
-            {
-                handle_transition(host, *port, password.clone());
-                true
-            }
-            (Capability::OBSTransition { host, port, password }, LogicalEvent::EncoderPress(e))
-                if e.pressed =>
-            {
+            // OBSTransition - press to trigger transition
+            Capability::OBSTransition { host, port, password } if is_press_event(event) => {
                 handle_transition(host, *port, password.clone());
                 true
             }

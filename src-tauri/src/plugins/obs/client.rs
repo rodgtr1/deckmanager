@@ -2,17 +2,22 @@
 //!
 //! Controls OBS Studio via the obs-websocket 5.x protocol (built into OBS 28+).
 //! Default endpoint: ws://{host}:{port}
+//!
+//! Uses connection pooling to reuse authenticated WebSocket connections.
 
 use anyhow::{Context, Result};
 use base64::Engine;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
+use std::collections::HashMap;
 use std::net::IpAddr;
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::Mutex;
 use std::thread;
-use std::time::Duration;
-use tungstenite::{connect, Message};
+use std::time::{Duration, Instant};
+use tungstenite::stream::MaybeTlsStream;
+use tungstenite::{connect, Message, WebSocket};
 
 /// Number of retry attempts for network operations
 const MAX_RETRIES: u32 = 2;
@@ -20,12 +25,74 @@ const MAX_RETRIES: u32 = 2;
 /// Delay between retry attempts
 const RETRY_DELAY: Duration = Duration::from_millis(100);
 
+/// Maximum age for pooled connections (30 seconds)
+const CONNECTION_MAX_AGE: Duration = Duration::from_secs(30);
+
 /// Global request ID counter
 static REQUEST_ID: AtomicU32 = AtomicU32::new(1);
 
 /// Generate a unique request ID
 fn next_request_id() -> String {
     REQUEST_ID.fetch_add(1, Ordering::SeqCst).to_string()
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Connection Pool
+// ─────────────────────────────────────────────────────────────────
+
+type OBSWebSocket = WebSocket<MaybeTlsStream<std::net::TcpStream>>;
+
+/// Pooled connection entry
+struct PooledConnection {
+    socket: OBSWebSocket,
+    created_at: Instant,
+}
+
+/// Global connection pool for OBS WebSocket connections
+static CONNECTION_POOL: Mutex<Option<HashMap<String, PooledConnection>>> = Mutex::new(None);
+
+/// Get or initialize the connection pool
+fn with_pool<F, R>(f: F) -> R
+where
+    F: FnOnce(&mut HashMap<String, PooledConnection>) -> R,
+{
+    let mut guard = CONNECTION_POOL.lock().unwrap_or_else(|e| e.into_inner());
+    let pool = guard.get_or_insert_with(HashMap::new);
+    f(pool)
+}
+
+/// Take a connection from the pool if available and not expired
+fn take_pooled_connection(key: &str) -> Option<OBSWebSocket> {
+    with_pool(|pool| {
+        if let Some(mut entry) = pool.remove(key) {
+            // Check if connection is still fresh
+            if entry.created_at.elapsed() < CONNECTION_MAX_AGE {
+                return Some(entry.socket);
+            }
+            // Connection expired, close it
+            let _ = entry.socket.close(None);
+        }
+        None
+    })
+}
+
+/// Return a connection to the pool for reuse
+fn return_pooled_connection(key: String, socket: OBSWebSocket) {
+    with_pool(|pool| {
+        // Clean up any stale connections first
+        pool.retain(|_, entry| entry.created_at.elapsed() < CONNECTION_MAX_AGE);
+
+        // Only pool if we have room (limit to 5 connections)
+        if pool.len() < 5 {
+            pool.insert(
+                key,
+                PooledConnection {
+                    socket,
+                    created_at: Instant::now(),
+                },
+            );
+        }
+    });
 }
 
 /// Validate that an IP address is safe to connect to (private/local network only)
@@ -149,111 +216,139 @@ impl OBSConnection {
     }
 }
 
-/// Execute a single request to OBS and return the response
-pub fn send_request(conn: &OBSConnection, request_type: &str, request_data: Option<Value>) -> Result<Value> {
-    validate_ip(&conn.host)?;
+/// Create a new authenticated WebSocket connection to OBS
+fn create_connection(conn: &OBSConnection) -> Result<OBSWebSocket> {
+    let url = format!("ws://{}:{}", conn.host, conn.port);
 
-    // Clone request_data for use in retry closure
-    let request_data = request_data.clone();
+    // Connect to OBS WebSocket
+    let (mut socket, _response) = connect(&url)
+        .context("Failed to connect to OBS WebSocket")?;
 
-    with_retry(|| {
-        let url = format!("ws://{}:{}", conn.host, conn.port);
+    // Step 1: Receive Hello
+    let hello_msg = socket.read()
+        .context("Failed to read Hello from OBS")?;
+    let hello: OBSMessage = serde_json::from_str(&hello_msg.to_text()?)
+        .context("Failed to parse Hello message")?;
 
-        // Connect to OBS WebSocket
-        let (mut socket, _response) = connect(&url)
-            .context("Failed to connect to OBS WebSocket")?;
+    if hello.op != op::HELLO {
+        anyhow::bail!("Expected Hello message, got op {}", hello.op);
+    }
 
-        // Step 1: Receive Hello
-        let hello_msg = socket.read()
-            .context("Failed to read Hello from OBS")?;
-        let hello: OBSMessage = serde_json::from_str(&hello_msg.to_text()?)
-            .context("Failed to parse Hello message")?;
+    let hello_data: Hello = serde_json::from_value(hello.d)
+        .context("Failed to parse Hello data")?;
 
-        if hello.op != op::HELLO {
-            anyhow::bail!("Expected Hello message, got op {}", hello.op);
-        }
-
-        let hello_data: Hello = serde_json::from_value(hello.d)
-            .context("Failed to parse Hello data")?;
-
-        // Step 2: Send Identify (with optional auth)
-        let identify = if let Some(auth) = hello_data.authentication {
-            if let Some(password) = &conn.password {
-                let auth_string = generate_auth_string(password, &auth.challenge, &auth.salt);
-                json!({
-                    "op": op::IDENTIFY,
-                    "d": {
-                        "rpcVersion": 1,
-                        "authentication": auth_string
-                    }
-                })
-            } else {
-                anyhow::bail!("OBS requires authentication but no password provided");
-            }
-        } else {
+    // Step 2: Send Identify (with optional auth)
+    let identify = if let Some(auth) = hello_data.authentication {
+        if let Some(password) = &conn.password {
+            let auth_string = generate_auth_string(password, &auth.challenge, &auth.salt);
             json!({
                 "op": op::IDENTIFY,
                 "d": {
-                    "rpcVersion": 1
-                }
-            })
-        };
-
-        socket.send(Message::Text(identify.to_string()))
-            .context("Failed to send Identify")?;
-
-        // Step 3: Receive Identified
-        let identified_msg = socket.read()
-            .context("Failed to read Identified from OBS")?;
-        let identified: OBSMessage = serde_json::from_str(&identified_msg.to_text()?)
-            .context("Failed to parse Identified message")?;
-
-        if identified.op != op::IDENTIFIED {
-            anyhow::bail!("Authentication failed or unexpected message (op {})", identified.op);
-        }
-
-        // Parse to verify it's valid
-        let _: Identified = serde_json::from_value(identified.d)
-            .context("Failed to parse Identified data")?;
-
-        // Step 4: Send Request
-        let request_id = next_request_id();
-        let request = if let Some(ref data) = request_data {
-            json!({
-                "op": op::REQUEST,
-                "d": {
-                    "requestType": request_type,
-                    "requestId": request_id,
-                    "requestData": data
+                    "rpcVersion": 1,
+                    "authentication": auth_string
                 }
             })
         } else {
-            json!({
-                "op": op::REQUEST,
-                "d": {
-                    "requestType": request_type,
-                    "requestId": request_id
-                }
-            })
-        };
-
-        socket.send(Message::Text(request.to_string()))
-            .context("Failed to send request")?;
-
-        // Step 5: Receive Response
-        let response_msg = socket.read()
-            .context("Failed to read response from OBS")?;
-        let response: OBSMessage = serde_json::from_str(&response_msg.to_text()?)
-            .context("Failed to parse response message")?;
-
-        if response.op != op::REQUEST_RESPONSE {
-            anyhow::bail!("Expected RequestResponse, got op {}", response.op);
+            anyhow::bail!("OBS requires authentication but no password provided");
         }
+    } else {
+        json!({
+            "op": op::IDENTIFY,
+            "d": {
+                "rpcVersion": 1
+            }
+        })
+    };
 
-        // Close connection
-        let _ = socket.close(None);
+    socket.send(Message::Text(identify.to_string()))
+        .context("Failed to send Identify")?;
 
-        Ok(response.d)
+    // Step 3: Receive Identified
+    let identified_msg = socket.read()
+        .context("Failed to read Identified from OBS")?;
+    let identified: OBSMessage = serde_json::from_str(&identified_msg.to_text()?)
+        .context("Failed to parse Identified message")?;
+
+    if identified.op != op::IDENTIFIED {
+        anyhow::bail!("Authentication failed or unexpected message (op {})", identified.op);
+    }
+
+    // Parse to verify it's valid
+    let _: Identified = serde_json::from_value(identified.d)
+        .context("Failed to parse Identified data")?;
+
+    Ok(socket)
+}
+
+/// Send a request using a socket, returning the response
+fn send_request_on_socket(socket: &mut OBSWebSocket, request_type: &str, request_data: Option<&Value>) -> Result<Value> {
+    let request_id = next_request_id();
+    let request = if let Some(data) = request_data {
+        json!({
+            "op": op::REQUEST,
+            "d": {
+                "requestType": request_type,
+                "requestId": request_id,
+                "requestData": data
+            }
+        })
+    } else {
+        json!({
+            "op": op::REQUEST,
+            "d": {
+                "requestType": request_type,
+                "requestId": request_id
+            }
+        })
+    };
+
+    socket.send(Message::Text(request.to_string()))
+        .context("Failed to send request")?;
+
+    // Receive Response
+    let response_msg = socket.read()
+        .context("Failed to read response from OBS")?;
+    let response: OBSMessage = serde_json::from_str(&response_msg.to_text()?)
+        .context("Failed to parse response message")?;
+
+    if response.op != op::REQUEST_RESPONSE {
+        anyhow::bail!("Expected RequestResponse, got op {}", response.op);
+    }
+
+    Ok(response.d)
+}
+
+/// Execute a single request to OBS and return the response.
+/// Uses connection pooling to reuse authenticated WebSocket connections.
+pub fn send_request(conn: &OBSConnection, request_type: &str, request_data: Option<Value>) -> Result<Value> {
+    validate_ip(&conn.host)?;
+
+    let pool_key = conn.key();
+
+    // Try to use a pooled connection first
+    if let Some(mut socket) = take_pooled_connection(&pool_key) {
+        match send_request_on_socket(&mut socket, request_type, request_data.as_ref()) {
+            Ok(response) => {
+                // Success! Return connection to pool for reuse
+                return_pooled_connection(pool_key, socket);
+                return Ok(response);
+            }
+            Err(_) => {
+                // Connection failed, close it and fall through to create new one
+                let _ = socket.close(None);
+            }
+        }
+    }
+
+    // No pooled connection or it failed - create a new one with retry
+    with_retry(|| {
+        let mut socket = create_connection(conn)?;
+        let response = send_request_on_socket(&mut socket, request_type, request_data.as_ref())?;
+
+        // Return connection to pool for reuse
+        return_pooled_connection(pool_key.clone(), socket);
+
+        Ok(response)
     })
 }
 

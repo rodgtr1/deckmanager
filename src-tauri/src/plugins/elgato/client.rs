@@ -6,8 +6,18 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
+use std::sync::LazyLock;
 use std::thread;
 use std::time::Duration;
+
+/// Shared HTTP client with connection pooling for better performance
+static HTTP_CLIENT: LazyLock<reqwest::blocking::Client> = LazyLock::new(|| {
+    reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(2))
+        .pool_max_idle_per_host(5)
+        .build()
+        .expect("Failed to create HTTP client")
+});
 
 /// Number of retry attempts for network operations
 const MAX_RETRIES: u32 = 2;
@@ -104,9 +114,8 @@ pub fn get_state(ip: &str, port: u16) -> Result<KeyLightState> {
     let url = format!("http://{}:{}/elgato/lights", ip, port);
 
     with_retry(|| {
-        let response: LightsResponse = reqwest::blocking::Client::new()
+        let response: LightsResponse = HTTP_CLIENT
             .get(&url)
-            .timeout(Duration::from_secs(2))
             .send()
             .context("Failed to connect to Key Light")?
             .json()
@@ -139,9 +148,8 @@ pub fn set_state(ip: &str, port: u16, on: bool, brightness: u8) -> Result<()> {
     };
 
     with_retry(|| {
-        reqwest::blocking::Client::new()
+        HTTP_CLIENT
             .put(&url)
-            .timeout(Duration::from_secs(2))
             .json(&request)
             .send()
             .context("Failed to send command to Key Light")?;

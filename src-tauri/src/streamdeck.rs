@@ -584,3 +584,119 @@ fn emit_event(app: &AppHandle, event: LogicalEvent) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::capability::Capability;
+
+    #[test]
+    fn test_get_max_page_empty() {
+        let bindings: Vec<Binding> = vec![];
+        assert_eq!(get_max_page(&bindings), 0);
+    }
+
+    #[test]
+    fn test_get_max_page_single_page() {
+        let bindings = vec![
+            Binding {
+                input: InputRef::Button { index: 0 },
+                capability: Capability::MediaPlayPause,
+                page: 0,
+                icon: None,
+                label: None,
+                button_image: None,
+                button_image_alt: None,
+                show_label: None,
+                icon_color: None,
+                icon_color_alt: None,
+            },
+        ];
+        assert_eq!(get_max_page(&bindings), 0);
+    }
+
+    #[test]
+    fn test_get_max_page_multiple_pages() {
+        let bindings = vec![
+            Binding {
+                input: InputRef::Button { index: 0 },
+                capability: Capability::MediaPlayPause,
+                page: 0,
+                icon: None,
+                label: None,
+                button_image: None,
+                button_image_alt: None,
+                show_label: None,
+                icon_color: None,
+                icon_color_alt: None,
+            },
+            Binding {
+                input: InputRef::Button { index: 1 },
+                capability: Capability::MediaNext,
+                page: 2,
+                icon: None,
+                label: None,
+                button_image: None,
+                button_image_alt: None,
+                show_label: None,
+                icon_color: None,
+                icon_color_alt: None,
+            },
+            Binding {
+                input: InputRef::Button { index: 2 },
+                capability: Capability::MediaPrevious,
+                page: 1,
+                icon: None,
+                label: None,
+                button_image: None,
+                button_image_alt: None,
+                show_label: None,
+                icon_color: None,
+                icon_color_alt: None,
+            },
+        ];
+        assert_eq!(get_max_page(&bindings), 2);
+    }
+
+    #[test]
+    fn test_sync_images_flag_initial_state() {
+        // Flag should be false initially (or after being consumed)
+        SYNC_IMAGES_FLAG.store(false, Ordering::SeqCst);
+        assert!(!SYNC_IMAGES_FLAG.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn test_request_image_sync_sets_flag() {
+        SYNC_IMAGES_FLAG.store(false, Ordering::SeqCst);
+        request_image_sync();
+        assert!(SYNC_IMAGES_FLAG.load(Ordering::SeqCst));
+        // Clean up
+        SYNC_IMAGES_FLAG.store(false, Ordering::SeqCst);
+    }
+
+    #[test]
+    fn test_sync_images_flag_swap_clears() {
+        SYNC_IMAGES_FLAG.store(true, Ordering::SeqCst);
+        let was_set = SYNC_IMAGES_FLAG.swap(false, Ordering::SeqCst);
+        assert!(was_set);
+        assert!(!SYNC_IMAGES_FLAG.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn test_reconnect_constants() {
+        // Reconnect poll should be reasonably fast (50-500ms)
+        assert!(RECONNECT_POLL_INTERVAL >= Duration::from_millis(50));
+        assert!(RECONNECT_POLL_INTERVAL <= Duration::from_millis(500));
+
+        // Max wait should be reasonable (1-10 seconds)
+        assert!(RECONNECT_MAX_WAIT >= Duration::from_secs(1));
+        assert!(RECONNECT_MAX_WAIT <= Duration::from_secs(10));
+    }
+
+    #[test]
+    fn test_input_poll_timeout_constant() {
+        // Poll timeout should be responsive (10-200ms)
+        assert!(INPUT_POLL_TIMEOUT >= Duration::from_millis(10));
+        assert!(INPUT_POLL_TIMEOUT <= Duration::from_millis(200));
+    }
+}

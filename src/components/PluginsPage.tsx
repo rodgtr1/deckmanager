@@ -184,6 +184,8 @@ function parseMarkdown(markdown: string): string {
 }
 
 function processInline(text: string): string {
+  // Escape HTML first to prevent XSS
+  text = escapeHtml(text);
   // Bold
   text = text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
   // Inline code
