@@ -209,7 +209,7 @@ version = 1
 # Default binding: Press to open Deck Manager settings
 [[bindings]]
 page = 0
-button_image = "https://cdn.jsdelivr.net/gh/rodgtr1/deckmanager/assets/deckmanager-settings.png"
+button_image = "https://cdn.jsdelivr.net/gh/rodgtr1/deckmanager@main/assets/deckmanager-settings.png"
 show_label = false
 
 [bindings.input]
