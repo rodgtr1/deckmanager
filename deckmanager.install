@@ -21,6 +21,12 @@ post_upgrade() {
     post_install
 }
 
+pre_remove() {
+    echo ":: Stopping deckmanager..."
+    pkill -f deckmanager-bin 2>/dev/null || true
+    sleep 1
+}
+
 post_remove() {
     echo ":: Updating icon cache..."
     gtk-update-icon-cache -q -t -f /usr/share/icons/hicolor 2>/dev/null || true
