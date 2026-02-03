@@ -53,9 +53,9 @@ jobs:
           releaseBody: |
             ## Installation
 
-            **Arch Linux:**
+            **Arch Linux (or any distro):**
             ```bash
-            yay -S deckmanager
+            curl -fsSL https://raw.githubusercontent.com/rodgtr1/deckmanager/main/install.sh | bash
             ```
 
             **Debian/Ubuntu:**
