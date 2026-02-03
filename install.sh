@@ -209,16 +209,15 @@ version = 1
 # Default binding: Press to open Deck Manager settings
 [[bindings]]
 page = 0
-button_image = "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/homepage.png"
-show_label = true
-label = "Settings"
+button_image = "https://cdn.jsdelivr.net/gh/rodgtr1/deckmanager/assets/deckmanager-settings.png"
+show_label = false
 
 [bindings.input]
 type = "Button"
 index = 0
 
 [bindings.capability]
-type = "Command"
+type = "LaunchApp"
 command = "deckmanager"
 EOF
 

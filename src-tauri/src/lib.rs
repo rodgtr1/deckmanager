@@ -1,5 +1,6 @@
 use std::sync::{Arc, Mutex};
 use tauri::{Builder, Manager, RunEvent, WindowEvent};
+use tauri_plugin_single_instance::init as single_instance_init;
 
 mod binding;
 mod button_renderer;
@@ -100,6 +101,13 @@ pub fn run_with_options(start_hidden: bool) {
     let system_state_poller = Arc::clone(&system_state);
 
     let app = Builder::default()
+        .plugin(single_instance_init(|app, _args, _cwd| {
+            // When a second instance is launched, show and focus the existing window
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .manage(AppState {
