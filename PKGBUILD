@@ -30,6 +30,7 @@ build() {
 
     # Clean stale build artifacts to ensure fresh build
     rm -rf src-tauri/target/release/bundle
+    rm -f src-tauri/target/release/deckmanager
 
     # Install frontend dependencies
     npm ci

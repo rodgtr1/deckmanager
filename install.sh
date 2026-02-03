@@ -135,6 +135,7 @@ install_from_source() {
     # Clean stale build artifacts to ensure fresh build
     info "Cleaning stale build artifacts..."
     rm -rf src-tauri/target/release/bundle
+    rm -f src-tauri/target/release/deckmanager
 
     # Build and install based on distro
     case $(detect_distro) in
