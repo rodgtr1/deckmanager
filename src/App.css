@@ -185,6 +185,7 @@
     position: absolute;
     top: 4px;
     left: 6px;
+    pointer-events: none;
 }
 
 .button-label {
@@ -192,6 +193,7 @@
     color: var(--text-primary);
     text-align: center;
     word-break: break-word;
+    pointer-events: none;
 }
 
 /* Touch Strip */
@@ -606,6 +608,7 @@
 .button-icon {
     font-size: 1.5rem;
     line-height: 1;
+    pointer-events: none;
 }
 
 /* Button image display */
@@ -614,6 +617,7 @@
     height: 48px;
     object-fit: contain;
     border-radius: 4px;
+    pointer-events: none;
 }
 
 .deck-button.has-image {

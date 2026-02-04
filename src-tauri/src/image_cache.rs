@@ -217,6 +217,7 @@ fn load_svg(source: &str, color: Option<&str>, target_size: u32) -> Result<Dynam
 
 /// Load an image with optional SVG colorization (with caching).
 /// For SVG files, the color parameter is used to colorize the icon.
+/// All images are resized to fit within target_size while preserving aspect ratio.
 pub fn load_cached_with_color(source: &str, color: Option<&str>, target_size: u32) -> Result<DynamicImage> {
     // Create cache key including color and size
     let cache_key = match color {
@@ -233,7 +234,13 @@ pub fn load_cached_with_color(source: &str, color: Option<&str>, target_size: u3
     let img = if is_svg(source) {
         load_svg(source, color, target_size)?
     } else {
-        load_image_uncached(source)?
+        let loaded = load_image_uncached(source)?;
+        // Resize non-SVG images to fit within target_size (preserving aspect ratio)
+        if loaded.width() > target_size || loaded.height() > target_size {
+            loaded.resize(target_size, target_size, image::imageops::FilterType::Lanczos3)
+        } else {
+            loaded
+        }
     };
 
     // Cache it

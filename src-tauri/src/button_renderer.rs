@@ -254,9 +254,15 @@ impl LcdRenderer {
 
         let (section_w, section_h) = self.section_size;
 
-        // Load image with optional SVG colorization
-        // Use 65% of height for icon to leave padding around edges
-        let icon_size = (section_h as f32 * 0.65) as u32;
+        // SVGs get 70% height (with padding), PNGs/other images fill full height
+        let is_svg = image_source.to_lowercase().ends_with(".svg")
+            || (image_source.contains("/icons/") && image_source.contains("lucide"));
+        let icon_size = if is_svg {
+            (section_h as f32 * 0.70) as u32
+        } else {
+            section_h
+        };
+
         let img = image_cache::load_cached_with_color(
             image_source,
             binding.icon_color.as_deref(),
