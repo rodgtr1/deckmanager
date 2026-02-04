@@ -323,25 +323,28 @@ fn create_lcd_renderer(kind: Kind) -> Result<Option<LcdRenderer>> {
     }
 }
 
-/// Get the effective image for a binding based on current system state.
+/// Get the effective image and color for a binding based on current system state.
 /// Uses the plugin registry to determine active state.
-fn get_effective_image<'a>(
+/// Returns (image_path, icon_color) - using alt variants when in active state.
+fn get_effective_image_and_color<'a>(
     binding: &'a Binding,
     state: &SystemState,
     registry: &PluginRegistry
-) -> Option<&'a str> {
+) -> (Option<&'a str>, Option<&'a str>) {
     // Check if this capability has an "active" state via plugin
     let is_active = registry.is_binding_active(binding, state);
 
-    // If active and we have an alt image, use it
+    // If active and we have an alt image, use alt image and alt color
     if is_active {
         if let Some(ref alt) = binding.button_image_alt {
-            return Some(alt.as_str());
+            let color = binding.icon_color_alt.as_deref()
+                .or(binding.icon_color.as_deref()); // Fall back to default color if no alt color
+            return (Some(alt.as_str()), color);
         }
     }
 
-    // Otherwise use the default image
-    binding.button_image.as_deref()
+    // Otherwise use the default image and default color
+    (binding.button_image.as_deref(), binding.icon_color.as_deref())
 }
 
 /// Sync all button images from bindings to hardware.
@@ -367,10 +370,10 @@ fn sync_button_images(
                 continue;
             }
 
-            // Get effective image based on state
-            let effective_image = get_effective_image(binding, state, registry);
+            // Get effective image and color based on state
+            let (effective_image, effective_color) = get_effective_image_and_color(binding, state, registry);
 
-            // Create a modified binding with the effective image for rendering
+            // Create a modified binding with the effective image and color for rendering
             let render_binding = Binding {
                 input: binding.input.clone(),
                 capability: binding.capability.clone(),
@@ -380,8 +383,8 @@ fn sync_button_images(
                 button_image: effective_image.map(String::from),
                 button_image_alt: None, // Not needed for rendering
                 show_label: binding.show_label,
-                icon_color: binding.icon_color.clone(),
-                icon_color_alt: binding.icon_color_alt.clone(),
+                icon_color: effective_color.map(String::from),
+                icon_color_alt: None, // Not needed for rendering
             };
 
             match renderer.render_binding(&render_binding) {
@@ -460,29 +463,29 @@ fn sync_lcd_images(
         let x = (encoder_idx as u32 * section_w) as u16;
 
         // Determine which binding has an image (considering state)
-        let (binding_to_use, effective_image) = {
+        let (binding_to_use, effective_image, effective_color) = {
             // Try press binding first
             if let Some(b) = press_binding {
-                let img = get_effective_image(b, state, registry);
+                let (img, color) = get_effective_image_and_color(b, state, registry);
                 if img.is_some() {
-                    (Some(b), img)
+                    (Some(b), img, color)
                 } else if let Some(rb) = rotate_binding {
-                    let rimg = get_effective_image(rb, state, registry);
-                    (Some(rb), rimg)
+                    let (rimg, rcolor) = get_effective_image_and_color(rb, state, registry);
+                    (Some(rb), rimg, rcolor)
                 } else {
-                    (None, None)
+                    (None, None, None)
                 }
             } else if let Some(rb) = rotate_binding {
-                let rimg = get_effective_image(rb, state, registry);
-                (Some(rb), rimg)
+                let (rimg, rcolor) = get_effective_image_and_color(rb, state, registry);
+                (Some(rb), rimg, rcolor)
             } else {
-                (None, None)
+                (None, None, None)
             }
         };
 
         match (binding_to_use, effective_image) {
             (Some(binding), Some(img_path)) => {
-                // Create a modified binding with the effective image for rendering
+                // Create a modified binding with the effective image and color for rendering
                 let render_binding = Binding {
                     input: binding.input.clone(),
                     capability: binding.capability.clone(),
@@ -492,8 +495,8 @@ fn sync_lcd_images(
                     button_image: Some(img_path.to_string()),
                     button_image_alt: None,
                     show_label: binding.show_label,
-                    icon_color: binding.icon_color.clone(),
-                    icon_color_alt: binding.icon_color_alt.clone(),
+                    icon_color: effective_color.map(String::from),
+                    icon_color_alt: None,
                 };
 
                 match renderer.render_binding(&render_binding) {
